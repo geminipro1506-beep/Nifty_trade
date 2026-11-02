@@ -37,6 +37,8 @@ data class MainUiState(
     val historicalSignals: List<HistoricalSignalRecord> = emptyList(),
     val strategyInsights: List<StrategyImprovementInsight> = emptyList(),
     val strategyComparisons: List<StrategyPerformanceComparison> = emptyList(),
+    val strategyCohortMetrics: List<StrategyCohortMetric> = emptyList(),
+    val reconciliationReport: ReconciliationReport? = null,
     val paperAccount: PaperTradingAccount = PaperTradingAccount(),
     val selectedAccuracyPeriod: AccuracyPeriod = AccuracyPeriod.LAST_30_DAYS,
     val selectedStrategyFilter: StrategyFilter = StrategyFilter.ALL,

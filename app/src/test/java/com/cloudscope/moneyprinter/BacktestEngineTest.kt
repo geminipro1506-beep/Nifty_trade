@@ -27,6 +27,17 @@ class BacktestEngineTest {
         assertTrue("Total taxes and charges should be recorded", result.totalChargesAndTaxes >= 0.0)
         assertTrue("Max drawdown must be non-negative", result.maxDrawdownAmount >= 0.0)
         assertTrue("Profit factor should be non-negative", result.profitFactor >= 0.0)
+        assertNotNull("Parameter stability report should be present", result.parameterStabilityReport)
+    }
+
+    @Test
+    fun testParameterStabilityReportVerification() {
+        val candles = HistoricalSampleData.sampleNiftyCandles
+        val stabilityReport = BacktestEngine.testParameterStability(candles)
+
+        assertNotNull(stabilityReport)
+        assertTrue(stabilityReport.parameterResults.isNotEmpty())
+        assertTrue("Stability report notes should be present", stabilityReport.auditNotes.isNotEmpty())
     }
 
     @Test

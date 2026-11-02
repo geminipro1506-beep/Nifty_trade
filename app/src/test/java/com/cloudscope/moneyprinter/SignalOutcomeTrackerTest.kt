@@ -164,9 +164,42 @@ class SignalOutcomeTrackerTest {
         assertEquals(ExitReason.AMBIGUOUS, updated.exitReason)
         assertEquals(120.0, updated.actualExitPrice!!, 0.01) // Breakeven exit at entry
         assertEquals(0.0, updated.grossPnl, 0.01)
+        assertTrue(updated.targetAndSlSameCandle)
+        assertNotNull(updated.ambiguousReason)
+        assertEquals("AMBIGUOUS_UNRESOLVED_EXCLUDED_FROM_WIN_RATE", updated.finalResolutionStatus)
         // Net PnL must be strictly negative due to transaction friction
         assertTrue(updated.netPnl < 0.0)
         assertTrue(updated.totalCharges > 0.0)
+    }
+
+    @Test
+    fun testAmbiguousCandleResolvedByFinerSubCandleSequence() {
+        val active = createSamplePendingRecord().copy(
+            status = SignalLifecycleStatus.ACTIVE,
+            entryMet = true,
+            entryTimestamp = System.currentTimeMillis() - (10 * 60 * 1000L)
+        )
+
+        val now = System.currentTimeMillis()
+        // Sub-candle sequence: 1m candle 1 touches SL (88 <= 90) before 1m candle 2 touches Target 1 (152 >= 150)
+        val subCandles = listOf(
+            HistoricalCandle(now - 120000, open = 115.0, high = 118.0, low = 88.0, close = 95.0, volume = 5000), // SL breached here!
+            HistoricalCandle(now - 60000, open = 95.0, high = 153.0, low = 94.0, close = 145.0, volume = 8000)
+        )
+
+        val updated = SignalOutcomeTracker.evaluateSignal(
+            record = active,
+            currentOptionLtp = 145.0,
+            candleHigh = 153.0,
+            candleLow = 88.0,
+            subCandles = subCandles
+        )
+
+        // Sub-candle resolved SL hit first!
+        assertEquals(SignalLifecycleStatus.CLOSED, updated.status)
+        assertEquals(TradeOutcome.LOSS, updated.outcome)
+        assertEquals(ExitReason.STOP_LOSS, updated.exitReason)
+        assertEquals("RESOLVED_VIA_SUBCANDLE_SEQUENCE", updated.finalResolutionStatus)
     }
 
     @Test

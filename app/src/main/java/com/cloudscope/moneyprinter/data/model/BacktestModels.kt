@@ -33,7 +33,7 @@ data class BacktestTrade(
     val exitPrice: Double,
     val exitReason: ExitReason,
     val lots: Int = 1,
-    val lotSize: Int = 25, // Current NIFTY lot size is 25 (or 50/75 historically)
+    val lotSize: Int = 25, // Current NIFTY lot size is 25
     val grossProfit: Double,
     val brokerage: Double,
     val stt: Double,
@@ -61,6 +61,25 @@ data class BacktestConfig(
     val minConfidenceThreshold: Int = 65     // Only execute when AI confidence >= 65%
 )
 
+data class ParameterStabilityResult(
+    val parameterName: String,
+    val baselineValue: Double,
+    val testValue: Double,
+    val baselineWinRate: Double,
+    val testWinRate: Double,
+    val baselineExpectancy: Double,
+    val testExpectancy: Double,
+    val winRateChangePercent: Double,
+    val isStable: Boolean
+)
+
+data class ParameterStabilityReport(
+    val overallStable: Boolean,
+    val maxExpectancyDegradationPercent: Double,
+    val parameterResults: List<ParameterStabilityResult>,
+    val auditNotes: String
+)
+
 data class BacktestResult(
     val totalTrades: Int,
     val winningTrades: Int,
@@ -78,5 +97,13 @@ data class BacktestResult(
     val returnOnCapitalPercent: Double,
     val trades: List<BacktestTrade>,
     val walkForwardValidated: Boolean = true,
-    val validationNotes: String = "Walk-Forward Out-Of-Sample Verified with Institutional Slippage & STT"
+    val validationNotes: String = "Walk-Forward Out-Of-Sample Verified with Institutional Slippage & STT",
+    // Phase 3 In-Sample vs Out-of-Sample separation
+    val inSampleTradesCount: Int = 0,
+    val inSampleWinRate: Double = 0.0,
+    val inSampleNetProfit: Double = 0.0,
+    val outOfSampleTradesCount: Int = 0,
+    val outOfSampleWinRate: Double = 0.0,
+    val outOfSampleNetProfit: Double = 0.0,
+    val parameterStabilityReport: ParameterStabilityReport? = null
 )

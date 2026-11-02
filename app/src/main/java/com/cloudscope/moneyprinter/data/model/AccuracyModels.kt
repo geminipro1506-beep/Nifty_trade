@@ -78,7 +78,12 @@ data class HistoricalSignalRecord(
     val strategyType: StrategyType = StrategyType.TREND_FOLLOWING,
     val timeframe: String = "5m",
     val isPaperTrade: Boolean = false,
-    val adjustmentsLog: List<String> = emptyList()
+    val adjustmentsLog: List<String> = emptyList(),
+    // Phase 3 Ambiguous Sequence & Audit fields
+    val ambiguousReason: String? = null,
+    val candleResolution: String = "5m",
+    val targetAndSlSameCandle: Boolean = false,
+    val finalResolutionStatus: String? = null
 )
 
 data class AccuracyMetrics(
@@ -91,8 +96,9 @@ data class AccuracyMetrics(
     val expiredUnfilledSignals: Int,
     val cancelledSignals: Int,
     val openTrades: Int,
-    val winRate: Double,
-    val lossRate: Double,
+    val resolvedTradesCount: Int, // strictly winningTrades + losingTrades (unambiguous)
+    val winRate: Double, // winningTrades / (winningTrades + losingTrades) * 100.0
+    val lossRate: Double, // losingTrades / (winningTrades + losingTrades) * 100.0
     val target1HitRate: Double,
     val target2HitRate: Double,
     val target3HitRate: Double,
@@ -101,13 +107,19 @@ data class AccuracyMetrics(
     val grossLoss: Double,
     val netPnl: Double,
     val totalChargesAndTaxes: Double,
-    val profitFactor: Double,
-    val averageWin: Double,
-    val averageLoss: Double,
-    val expectancyPerTrade: Double,
-    val maxDrawdownPercent: Double,
-    val averageHoldingTimeMinutes: Long,
-    val hasSufficientData: Boolean
+    val profitFactor: Double, // grossProfit / absolute grossLoss
+    val averageWin: Double, // gross average win
+    val averageLoss: Double, // gross average loss
+    val averageWinningTradeNet: Double = 0.0,
+    val averageLosingTradeNet: Double = 0.0,
+    val expectancyPerTrade: Double, // Net PnL of resolved trades / resolved trades count
+    val maxDrawdownAmount: Double = 0.0,
+    val maxDrawdownPercent: Double = 0.0,
+    val averageHoldingTimeMinutes: Long = 0L,
+    val confidenceInterval95: Pair<Double, Double> = Pair(0.0, 0.0),
+    val statisticalReliabilityLabel: String = "Insufficient sample",
+    val sampleSizeWarning: String? = null,
+    val hasSufficientData: Boolean = false
 )
 
 data class StrategyPerformanceComparison(
@@ -118,7 +130,21 @@ data class StrategyPerformanceComparison(
     val profitFactor: Double,
     val netPnl: Double,
     val maxDrawdown: Double,
-    val status: String
+    val status: String,
+    // Phase 3 Backtest vs Out-of-sample vs Paper separation & Live Validation criteria
+    val backtestTrades: Int = 0,
+    val backtestWinRate: Double = 0.0,
+    val backtestNetPnl: Double = 0.0,
+    val outOfSampleTrades: Int = 0,
+    val outOfSampleWinRate: Double = 0.0,
+    val outOfSampleNetPnl: Double = 0.0,
+    val forwardPaperTrades: Int = 0,
+    val forwardPaperWinRate: Double = 0.0,
+    val forwardPaperNetPnl: Double = 0.0,
+    val netExpectancy: Double = 0.0,
+    val confidenceInterval95: Pair<Double, Double> = Pair(0.0, 0.0),
+    val isLiveValidated: Boolean = false,
+    val validationNotes: String = ""
 )
 
 data class StrategyImprovementInsight(
@@ -126,6 +152,53 @@ data class StrategyImprovementInsight(
     val observation: String,
     val recommendation: String,
     val statisticalEdge: String
+)
+
+data class StrategyCohortMetric(
+    val cohortName: String,
+    val category: String,
+    val sampleSize: Int,
+    val resolvedTrades: Int,
+    val winRate: Double,
+    val confidenceIntervalLower: Double,
+    val confidenceIntervalUpper: Double,
+    val profitFactor: Double,
+    val netExpectancy: Double,
+    val netPnl: Double,
+    val maxDrawdown: Double,
+    val reliabilityLabel: String,
+    val isPromoted: Boolean,
+    val promotionRationale: String
+)
+
+data class TradeAuditRecord(
+    val tradeId: String,
+    val symbol: String,
+    val grossPnl: Double,
+    val totalCharges: Double,
+    val netPnl: Double,
+    val expectedNetPnl: Double,
+    val isReconciled: Boolean,
+    val discrepancy: Double,
+    val outcome: TradeOutcome?,
+    val isAmbiguous: Boolean,
+    val notes: String
+)
+
+data class ReconciliationReport(
+    val totalTradesAudited: Int,
+    val resolvedTradesCount: Int,
+    val totalGrossPnl: Double,
+    val totalCharges: Double,
+    val totalNetPnl: Double,
+    val calculatedNetPnl: Double,
+    val netPnlDiscrepancy: Double,
+    val isFullyReconciled: Boolean,
+    val ambiguousTradesCount: Int,
+    val excludedTradesCount: Int,
+    val tradeAudits: List<TradeAuditRecord>,
+    val auditSummary: String,
+    val auditTimestamp: Long = System.currentTimeMillis()
 )
 
 data class PaperTradingAccount(

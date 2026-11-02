@@ -7,7 +7,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 
 interface SignalRepository {
     val signalsFlow: StateFlow<List<HistoricalSignalRecord>>
@@ -25,7 +28,7 @@ interface SignalRepository {
 }
 
 class SignalRepositoryImpl(
-    private val dbHelper: SignalDatabaseHelper
+    private val dbHelper: SignalDatabaseHelper? = null
 ) : SignalRepository {
 
     private val _signalsFlow = MutableStateFlow<List<HistoricalSignalRecord>>(emptyList())
@@ -33,30 +36,30 @@ class SignalRepositoryImpl(
 
     suspend fun initialize() {
         withContext(Dispatchers.IO) {
-            val list = dbHelper.getAllSignals()
+            val list = dbHelper?.getAllSignals() ?: emptyList()
             _signalsFlow.value = list
         }
     }
 
     override suspend fun recordGeneratedSignal(record: HistoricalSignalRecord): Long {
         return withContext(Dispatchers.IO) {
-            val result = dbHelper.insertSignal(record)
-            _signalsFlow.value = dbHelper.getAllSignals()
+            val result = dbHelper?.insertSignal(record) ?: 0L
+            _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
             result
         }
     }
 
     override suspend fun updateSignalLifecycle(record: HistoricalSignalRecord): Int {
         return withContext(Dispatchers.IO) {
-            val result = dbHelper.updateSignal(record)
-            _signalsFlow.value = dbHelper.getAllSignals()
+            val result = dbHelper?.updateSignal(record) ?: 0
+            _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
             result
         }
     }
 
     override suspend fun getAllSignals(): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper.getAllSignals()
+            dbHelper?.getAllSignals() ?: emptyList()
         }
     }
 
@@ -67,13 +70,13 @@ class SignalRepositoryImpl(
         paperTradesOnly: Boolean?
     ): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper.getSignalsByFilter(fromTimestamp, optionFilter, strategyFilter, paperTradesOnly)
+            dbHelper?.getSignalsByFilter(fromTimestamp, optionFilter, strategyFilter, paperTradesOnly) ?: emptyList()
         }
     }
 
     override suspend fun getOpenSignals(): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper.getOpenSignals()
+            dbHelper?.getOpenSignals() ?: emptyList()
         }
     }
 
@@ -90,6 +93,7 @@ class SignalRepositoryImpl(
                 expiredUnfilledSignals = 0,
                 cancelledSignals = 0,
                 openTrades = 0,
+                resolvedTradesCount = 0,
                 winRate = 0.0,
                 lossRate = 0.0,
                 target1HitRate = 0.0,
@@ -103,9 +107,15 @@ class SignalRepositoryImpl(
                 profitFactor = 0.0,
                 averageWin = 0.0,
                 averageLoss = 0.0,
+                averageWinningTradeNet = 0.0,
+                averageLosingTradeNet = 0.0,
                 expectancyPerTrade = 0.0,
+                maxDrawdownAmount = 0.0,
                 maxDrawdownPercent = 0.0,
                 averageHoldingTimeMinutes = 0L,
+                confidenceInterval95 = Pair(0.0, 0.0),
+                statisticalReliabilityLabel = "Insufficient sample",
+                sampleSizeWarning = "Sample size (0) is below statistical significance threshold.",
                 hasSufficientData = false
             )
         }
@@ -121,55 +131,99 @@ class SignalRepositoryImpl(
         val cancelled = signals.filter { it.status == SignalLifecycleStatus.CANCELLED || it.exitReason == ExitReason.CANCELLED }
         val open = signals.filter { it.status == SignalLifecycleStatus.PENDING_ENTRY || it.status == SignalLifecycleStatus.ACTIVE }
 
-        val t1Hits = executedTrades.filter { it.exitReason == ExitReason.TARGET_1 }.size
-        val t2Hits = executedTrades.filter { it.exitReason == ExitReason.TARGET_2 }.size
-        val t3Hits = executedTrades.filter { it.exitReason == ExitReason.TARGET_3 }.size
-        val slHits = executedTrades.filter { it.exitReason == ExitReason.STOP_LOSS }.size
-
+        // Section 1 Definition:
+        // Resolved trade count for win rate is strictly: Winning trades + Losing trades.
+        // Ambiguous, cancelled, expired and unfilled signals are strictly excluded from resolved-trade win rate.
+        val resolvedCount = wins.size + losses.size
         val closedTrades = executedTrades.filter { it.status == SignalLifecycleStatus.CLOSED }
-        val closedCount = closedTrades.size
 
-        val winRate = if (closedCount > 0) (wins.size.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
-        val lossRate = if (closedCount > 0) (losses.size.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
-        val t1Rate = if (closedCount > 0) (t1Hits.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
-        val t2Rate = if (closedCount > 0) (t2Hits.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
-        val t3Rate = if (closedCount > 0) (t3Hits.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
-        val slRate = if (closedCount > 0) (slHits.toDouble() / closedCount.toDouble()) * 100.0 else 0.0
+        val winRate = if (resolvedCount > 0) (wins.size.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
+        val lossRate = if (resolvedCount > 0) (losses.size.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
 
+        // Target and SL hit rates over resolved trades
+        val t1Hits = executedTrades.count { it.exitReason == ExitReason.TARGET_1 }
+        val t2Hits = executedTrades.count { it.exitReason == ExitReason.TARGET_2 }
+        val t3Hits = executedTrades.count { it.exitReason == ExitReason.TARGET_3 }
+        val slHits = executedTrades.count { it.exitReason == ExitReason.STOP_LOSS }
+
+        val t1Rate = if (resolvedCount > 0) (t1Hits.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
+        val t2Rate = if (resolvedCount > 0) (t2Hits.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
+        val t3Rate = if (resolvedCount > 0) (t3Hits.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
+        val slRate = if (resolvedCount > 0) (slHits.toDouble() / resolvedCount.toDouble()) * 100.0 else 0.0
+
+        // Financial metrics (Gross P&L, Charges, Net P&L)
         val grossProfit = wins.sumOf { max(0.0, it.grossPnl) }
-        val grossLoss = losses.sumOf { kotlin.math.abs(it.grossPnl) }
+        val grossLoss = losses.sumOf { abs(it.grossPnl) }
         val totalCharges = executedTrades.sumOf { it.totalCharges }
         val netPnl = executedTrades.sumOf { it.netPnl }
 
-        val profitFactor = if (grossLoss > 0.0) grossProfit / grossLoss else if (grossProfit > 0) 9.99 else 0.0
-        val avgWin = if (wins.isNotEmpty()) grossProfit / wins.size else 0.0
-        val avgLoss = if (losses.isNotEmpty()) grossLoss / losses.size else 0.0
-
-        val avgChargesPerTrade = if (closedCount > 0) totalCharges / closedCount else 0.0
-        val expectancy = if (closedCount > 0) {
-            val winProb = wins.size.toDouble() / closedCount.toDouble()
-            val lossProb = losses.size.toDouble() / closedCount.toDouble()
-            (winProb * avgWin) - (lossProb * avgLoss) - avgChargesPerTrade
-        } else {
-            0.0
+        // Section 1: Profit factor = Gross winning P&L / absolute gross losing P&L
+        val profitFactor = when {
+            grossLoss > 0.0 -> round2(grossProfit / grossLoss)
+            grossProfit > 0.0 -> 9.99
+            else -> 0.0
         }
 
-        // Drawdown calculation
-        var peak = 0.0
-        var cumulative = 0.0
-        var maxDd = 0.0
-        for (trade in closedTrades.sortedBy { it.timestamp }) {
-            cumulative += trade.netPnl
-            if (cumulative > peak) peak = cumulative
-            val dd = peak - cumulative
-            if (dd > maxDd) maxDd = dd
-        }
-        val maxDdPercent = if (peak > 0) (maxDd / peak) * 100.0 else 0.0
+        val avgWinGross = if (wins.isNotEmpty()) round2(grossProfit / wins.size) else 0.0
+        val avgLossGross = if (losses.isNotEmpty()) round2(grossLoss / losses.size) else 0.0
 
-        val avgHoldingTime = if (closedCount > 0) {
+        val avgWinNet = if (wins.isNotEmpty()) round2(wins.sumOf { it.netPnl } / wins.size) else 0.0
+        val avgLossNet = if (losses.isNotEmpty()) round2(abs(losses.sumOf { it.netPnl }) / losses.size) else 0.0
+
+        // Section 1: Expectancy = Average net P&L per resolved trade.
+        // Formula: Net P&L of resolved trades / resolved trades count
+        // Note: exactly reconciles to: (Win Rate * Avg Win Net) - (Loss Rate * Avg Loss Net)
+        val resolvedNetPnl = wins.sumOf { it.netPnl } + losses.sumOf { it.netPnl }
+        val expectancy = if (resolvedCount > 0) round2(resolvedNetPnl / resolvedCount) else 0.0
+
+        // Section 1: Maximum drawdown calculated from the chronological equity curve
+        // Base initial capital = ₹1,00,000
+        val baseCapital = 100000.0
+        var peakEquity = baseCapital
+        var currentEquity = baseCapital
+        var maxDdAmount = 0.0
+        var maxDdPercent = 0.0
+
+        val chronologicalTrades = closedTrades.sortedBy { it.exitTimestamp ?: it.timestamp }
+        for (trade in chronologicalTrades) {
+            currentEquity += trade.netPnl
+            if (currentEquity > peakEquity) {
+                peakEquity = currentEquity
+            }
+            val ddAmount = peakEquity - currentEquity
+            val ddPercent = if (peakEquity > 0) (ddAmount / peakEquity) * 100.0 else 0.0
+
+            if (ddAmount > maxDdAmount) maxDdAmount = ddAmount
+            if (ddPercent > maxDdPercent) maxDdPercent = ddPercent
+        }
+
+        val avgHoldingTime = if (closedTrades.isNotEmpty()) {
             closedTrades.map { it.holdingTimeMinutes }.average().toLong()
         } else {
             0L
+        }
+
+        // Section 3: 95% Wilson Score Confidence Interval for win rate
+        val confidenceInterval = calculateWilsonScoreInterval(wins.size, resolvedCount)
+
+        // Section 3: Operational sample-size labels
+        val (reliabilityLabel, sampleWarning) = when {
+            resolvedCount < 30 -> Pair(
+                "Insufficient sample",
+                "Sample size ($resolvedCount resolved) is below statistical significance threshold (N ≥ 30). Empirical win rate and expectancy may represent random distribution."
+            )
+            resolvedCount in 30..99 -> Pair(
+                "Preliminary evidence",
+                null
+            )
+            resolvedCount in 100..299 -> Pair(
+                "Developing evidence",
+                null
+            )
+            else -> Pair(
+                "Larger sample, still subject to validation",
+                null
+            )
         }
 
         return AccuracyMetrics(
@@ -182,23 +236,48 @@ class SignalRepositoryImpl(
             expiredUnfilledSignals = expired.size,
             cancelledSignals = cancelled.size,
             openTrades = open.size,
-            winRate = winRate,
-            lossRate = lossRate,
-            target1HitRate = t1Rate,
-            target2HitRate = t2Rate,
-            target3HitRate = t3Rate,
-            stopLossHitRate = slRate,
-            grossProfit = grossProfit,
-            grossLoss = grossLoss,
-            netPnl = netPnl,
-            totalChargesAndTaxes = totalCharges,
+            resolvedTradesCount = resolvedCount,
+            winRate = round1(winRate),
+            lossRate = round1(lossRate),
+            target1HitRate = round1(t1Rate),
+            target2HitRate = round1(t2Rate),
+            target3HitRate = round1(t3Rate),
+            stopLossHitRate = round1(slRate),
+            grossProfit = round2(grossProfit),
+            grossLoss = round2(grossLoss),
+            netPnl = round2(netPnl),
+            totalChargesAndTaxes = round2(totalCharges),
             profitFactor = profitFactor,
-            averageWin = avgWin,
-            averageLoss = avgLoss,
+            averageWin = avgWinGross,
+            averageLoss = avgLossGross,
+            averageWinningTradeNet = avgWinNet,
+            averageLosingTradeNet = avgLossNet,
             expectancyPerTrade = expectancy,
-            maxDrawdownPercent = maxDdPercent,
+            maxDrawdownAmount = round2(maxDdAmount),
+            maxDrawdownPercent = round1(maxDdPercent),
             averageHoldingTimeMinutes = avgHoldingTime,
-            hasSufficientData = closedCount >= 5
+            confidenceInterval95 = confidenceInterval,
+            statisticalReliabilityLabel = reliabilityLabel,
+            sampleSizeWarning = sampleWarning,
+            hasSufficientData = resolvedCount >= 30
         )
     }
+
+    /**
+     * Calculates 95% Wilson Score confidence interval for a binomial proportion.
+     */
+    private fun calculateWilsonScoreInterval(wins: Int, total: Int, z: Double = 1.95996): Pair<Double, Double> {
+        if (total <= 0) return Pair(0.0, 0.0)
+        val p = wins.toDouble() / total.toDouble()
+        val z2 = z * z
+        val denom = 1.0 + z2 / total
+        val center = (p + z2 / (2.0 * total)) / denom
+        val margin = (z * sqrt((p * (1.0 - p) + z2 / (4.0 * total)) / total)) / denom
+        val lower = max(0.0, center - margin) * 100.0
+        val upper = min(1.0, center + margin) * 100.0
+        return Pair(round1(lower), round1(upper))
+    }
+
+    private fun round1(value: Double): Double = Math.round(value * 10.0) / 10.0
+    private fun round2(value: Double): Double = Math.round(value * 100.0) / 100.0
 }

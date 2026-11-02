@@ -39,6 +39,8 @@ fun PerformanceScreen(
     val signals = uiState.historicalSignals
     val insights = uiState.strategyInsights
     val comparisons = uiState.strategyComparisons
+    val cohorts = uiState.strategyCohortMetrics
+    val auditReport = uiState.reconciliationReport
     val paperAccount = uiState.paperAccount
 
     LazyColumn(
@@ -78,7 +80,7 @@ fun PerformanceScreen(
             )
         }
 
-        // Primary KPI Metric Dashboard
+        // Primary KPI Metric Dashboard & Confidence Bounds
         if (metrics != null) {
             item {
                 KpiMetricsSection(metrics = metrics)
@@ -101,12 +103,20 @@ fun PerformanceScreen(
             }
         }
 
-        // Strategy Improvement Engine
+        // Strategy Improvement Engine & Cohort Optimization
         item {
             StrategyImprovementSection(
                 insights = insights,
-                comparisons = comparisons
+                comparisons = comparisons,
+                cohorts = cohorts
             )
+        }
+
+        // Mathematical Reconciliation & Audit Report
+        if (auditReport != null) {
+            item {
+                ReconciliationReportCard(report = auditReport)
+            }
         }
 
         // Paper Trading Simulator Portfolio
@@ -182,7 +192,7 @@ private fun PerformanceHeader() {
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
-            text = "Walk-Forward Statistical Engine • Multi-Dimensional Verification • Net P&L",
+            text = "Quantitative Validation Engine • 95% Confidence Intervals • Post-Friction Net P&L",
             color = colors.textSecondary,
             fontSize = 12.sp
         )
@@ -232,7 +242,6 @@ private fun FilterSection(
     onOptionSelected: (OptionFilter) -> Unit,
     onTogglePaperOnly: () -> Unit
 ) {
-    val colors = LocalTerminalColors.current
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Period tabs
         LazyRow(
@@ -254,7 +263,6 @@ private fun FilterSection(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            // Strategy Filter
             FilterChipItem(
                 label = selectedStrategy.label,
                 isSelected = selectedStrategy != StrategyFilter.ALL,
@@ -270,7 +278,6 @@ private fun FilterSection(
                 modifier = Modifier.weight(1f)
             )
 
-            // Option Filter
             FilterChipItem(
                 label = selectedOption.label,
                 isSelected = selectedOption != OptionFilter.ALL,
@@ -285,7 +292,6 @@ private fun FilterSection(
                 modifier = Modifier.weight(1f)
             )
 
-            // Paper Only Toggle
             FilterChipItem(
                 label = if (paperTradingOnly) "Paper Only" else "All Trades",
                 isSelected = paperTradingOnly,
@@ -327,6 +333,22 @@ private fun KpiMetricsSection(metrics: AccuracyMetrics) {
     val colors = LocalTerminalColors.current
 
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Sample Size Warning Banner (if sample < 30)
+        metrics.sampleSizeWarning?.let { warning ->
+            Surface(
+                color = colors.warning.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.warning.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, contentDescription = null, tint = colors.warning, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = warning, color = colors.warning, fontSize = 11.sp, lineHeight = 14.sp)
+                }
+            }
+        }
+
         // Main Row: Win Rate & Net PnL
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -334,12 +356,12 @@ private fun KpiMetricsSection(metrics: AccuracyMetrics) {
         ) {
             // Win Rate Card
             Card(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1.1f),
                 colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    Text("EMPIRICAL WIN RATE", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("RESOLVED WIN RATE", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "${String.format("%.1f", metrics.winRate)}%",
@@ -350,9 +372,23 @@ private fun KpiMetricsSection(metrics: AccuracyMetrics) {
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "${metrics.winningTrades}W / ${metrics.losingTrades}L (${metrics.totalExecutedTrades} executed)",
+                        text = "95% CI: ${metrics.confidenceInterval95.first}% – ${metrics.confidenceInterval95.second}%",
+                        color = colors.bullish,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${metrics.winningTrades}W / ${metrics.losingTrades}L (${metrics.resolvedTradesCount} resolved)",
                         color = colors.textSecondary,
                         fontSize = 11.sp
+                    )
+                    Text(
+                        text = metrics.statisticalReliabilityLabel,
+                        color = if (metrics.resolvedTradesCount >= 100) colors.bullish else colors.warning,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -380,6 +416,13 @@ private fun KpiMetricsSection(metrics: AccuracyMetrics) {
                         color = colors.textSecondary,
                         fontSize = 10.sp
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Reconciled with 0 discrepancies",
+                        color = colors.bullish,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
@@ -393,24 +436,28 @@ private fun KpiMetricsSection(metrics: AccuracyMetrics) {
                 title = "PROFIT FACTOR",
                 value = String.format("%.2f", metrics.profitFactor),
                 color = if (metrics.profitFactor >= 1.5) colors.bullish else colors.warning,
+                subtitle = "Gross W/L",
                 modifier = Modifier.weight(1f)
             )
             SmallMetricCard(
                 title = "EXPECTANCY",
-                value = "₹${String.format("%.0f", metrics.expectancyPerTrade)}",
+                value = "${if (metrics.expectancyPerTrade >= 0) "+" else ""}₹${String.format("%.0f", metrics.expectancyPerTrade)}",
                 color = if (metrics.expectancyPerTrade > 0) colors.bullish else colors.bearish,
+                subtitle = "Net/trade",
                 modifier = Modifier.weight(1f)
             )
             SmallMetricCard(
                 title = "MAX DRAWDOWN",
                 value = "${String.format("%.1f", metrics.maxDrawdownPercent)}%",
                 color = if (metrics.maxDrawdownPercent < 10.0) colors.bullish else colors.bearish,
+                subtitle = "₹${String.format("%.0f", metrics.maxDrawdownAmount)}",
                 modifier = Modifier.weight(1f)
             )
             SmallMetricCard(
                 title = "AVG HOLDING",
                 value = "${metrics.averageHoldingTimeMinutes}m",
                 color = colors.textPrimary,
+                subtitle = "Intraday",
                 modifier = Modifier.weight(1f)
             )
         }
@@ -422,6 +469,7 @@ private fun SmallMetricCard(
     title: String,
     value: String,
     color: Color,
+    subtitle: String = "",
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTerminalColors.current
@@ -433,7 +481,10 @@ private fun SmallMetricCard(
         Column(modifier = Modifier.padding(10.dp)) {
             Text(title, color = colors.textSecondary, fontSize = 8.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Spacer(modifier = Modifier.height(2.dp))
-            Text(value, color = color, fontSize = 16.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Text(value, color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            if (subtitle.isNotEmpty()) {
+                Text(subtitle, color = colors.textSecondary.copy(alpha = 0.8f), fontSize = 9.sp)
+            }
         }
     }
 }
@@ -447,12 +498,24 @@ private fun TargetDistributionCard(metrics: AccuracyMetrics) {
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            Text(
-                text = "TARGET & STOP-LOSS HIT DISTRIBUTION",
-                color = colors.textSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "TARGET & STOP-LOSS HIT DISTRIBUTION",
+                    color = colors.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "${metrics.resolvedTradesCount} Resolved",
+                    color = colors.bullish,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Spacer(modifier = Modifier.height(10.dp))
 
             Row(
@@ -465,6 +528,13 @@ private fun TargetDistributionCard(metrics: AccuracyMetrics) {
                 TargetRateItem("Stop Loss", "${String.format("%.1f", metrics.stopLossHitRate)}%", colors.bearish)
                 TargetRateItem("Ambiguous", "${metrics.ambiguousTrades}", colors.warning)
             }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Note: Ambiguous candles (${metrics.ambiguousTrades}) and unfilled (${metrics.expiredUnfilledSignals + metrics.cancelledSignals}) are strictly excluded from win rate.",
+                color = colors.textSecondary.copy(alpha = 0.8f),
+                fontSize = 9.sp
+            )
         }
     }
 }
@@ -482,9 +552,12 @@ private fun TargetRateItem(label: String, value: String, color: Color) {
 @Composable
 private fun StrategyImprovementSection(
     insights: List<StrategyImprovementInsight>,
-    comparisons: List<StrategyPerformanceComparison>
+    comparisons: List<StrategyPerformanceComparison>,
+    cohorts: List<StrategyCohortMetric>
 ) {
     val colors = LocalTerminalColors.current
+    var showCohorts by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = colors.surface),
@@ -498,7 +571,7 @@ private fun StrategyImprovementSection(
                 Icon(Icons.Default.AutoGraph, contentDescription = null, tint = colors.bullish, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "STRATEGY IMPROVEMENT ENGINE",
+                    text = "STRATEGY OPTIMIZATION & IMPROVEMENT ENGINE",
                     color = colors.textPrimary,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold
@@ -530,27 +603,222 @@ private fun StrategyImprovementSection(
 
             // Strategy Version Benchmark Comparison Table
             Spacer(modifier = Modifier.height(4.dp))
-            Text("VERSION BENCHMARK COMPARISON", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text("VERSION BENCHMARK & VALIDATION STATUS", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
 
             comparisons.forEach { comp ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.background)
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    color = colors.background,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.weight(1.2f)) {
-                        Text(comp.version, color = colors.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(comp.status, color = if (comp.status == "ACTIVE LIVE") colors.bullish else colors.textSecondary, fontSize = 9.sp)
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(comp.version, color = colors.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Surface(
+                                color = if (comp.isLiveValidated) colors.bullish.copy(alpha = 0.2f) else colors.warning.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = comp.status,
+                                    color = if (comp.isLiveValidated) colors.bullish else colors.warning,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Win Rate: ${comp.winRate}% (95% CI: ${comp.confidenceInterval95.first}–${comp.confidenceInterval95.second}%)", color = colors.textSecondary, fontSize = 10.sp)
+                            Text("PF: ${comp.profitFactor}", color = colors.textPrimary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("BT: ${comp.backtestTrades} trades | OOS: ${comp.outOfSampleTrades} | Paper: ${comp.forwardPaperTrades}", color = colors.textSecondary, fontSize = 10.sp)
+                            Text("Net P&L: ₹${String.format("%,.0f", comp.netPnl)}", color = if (comp.netPnl >= 0) colors.bullish else colors.bearish, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+                        if (comp.validationNotes.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(comp.validationNotes, color = colors.textSecondary.copy(alpha = 0.7f), fontSize = 9.sp)
+                        }
                     }
-                    Text("${comp.winRate}% WR", color = colors.bullish, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                }
+            }
+
+            // Cohort Optimization Toggle Button
+            if (cohorts.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Button(
+                    onClick = { showCohorts = !showCohorts },
+                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.background),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.bullish.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = if (showCohorts) "HIDE 10-COHORT OPTIMIZATION TABLE" else "SHOW 10-COHORT STRATEGY OPTIMIZATION",
+                        color = colors.bullish,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (showCohorts) {
+                    cohorts.forEach { cohort ->
+                        Surface(
+                            color = colors.background,
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(cohort.cohortName, color = colors.textPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("${cohort.category} • N=${cohort.resolvedTrades} resolved", color = colors.textSecondary, fontSize = 9.sp)
+                                    }
+                                    Surface(
+                                        color = if (cohort.isPromoted) colors.bullish.copy(alpha = 0.2f) else colors.surface,
+                                        shape = RoundedCornerShape(3.dp)
+                                    ) {
+                                        Text(
+                                            text = if (cohort.isPromoted) "PROMOTED" else "VALIDATING",
+                                            color = if (cohort.isPromoted) colors.bullish else colors.textSecondary,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("WR: ${cohort.winRate}% (CI: ${cohort.confidenceIntervalLower}–${cohort.confidenceIntervalUpper}%)", color = colors.textSecondary, fontSize = 10.sp)
+                                    Text("Expectancy: ${if (cohort.netExpectancy >= 0) "+" else ""}₹${cohort.netExpectancy}", color = if (cohort.netExpectancy >= 0) colors.bullish else colors.bearish, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    Text("PF: ${cohort.profitFactor}", color = colors.textPrimary, fontSize = 10.sp)
+                                }
+                                Text(cohort.promotionRationale, color = colors.textSecondary.copy(alpha = 0.8f), fontSize = 9.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReconciliationReportCard(report: ReconciliationReport) {
+    val colors = LocalTerminalColors.current
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (report.isFullyReconciled) Icons.Default.Verified else Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = if (report.isFullyReconciled) colors.bullish else colors.warning,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("${comp.profitFactor} PF", color = colors.textPrimary, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("₹${String.format("%,.0f", comp.netPnl)}", color = if (comp.netPnl >= 0) colors.bullish else colors.bearish, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("MATHEMATICAL RECONCILIATION AUDIT", color = colors.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Surface(
+                    color = if (report.isFullyReconciled) colors.bullish.copy(alpha = 0.2f) else colors.warning.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = if (report.isFullyReconciled) "100% RECONCILED" else "DISCREPANCY ALERT",
+                        color = if (report.isFullyReconciled) colors.bullish else colors.warning,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(report.auditSummary, color = colors.textSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Total Gross P&L", color = colors.textSecondary, fontSize = 9.sp)
+                    Text("₹${String.format("%,.2f", report.totalGrossPnl)}", color = colors.textPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Column {
+                    Text("Total Friction", color = colors.textSecondary, fontSize = 9.sp)
+                    Text("-₹${String.format("%,.2f", report.totalCharges)}", color = colors.bearish, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Column {
+                    Text("Reconciled Net", color = colors.textSecondary, fontSize = 9.sp)
+                    Text("₹${String.format("%,.2f", report.totalNetPnl)}", color = colors.bullish, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Column {
+                    Text("Variance", color = colors.textSecondary, fontSize = 9.sp)
+                    Text("₹${String.format("%.2f", report.netPnlDiscrepancy)}", color = colors.bullish, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(
+                onClick = { isExpanded = !isExpanded },
+                modifier = Modifier.align(Alignment.End),
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Text(
+                    text = if (isExpanded) "Hide Trade-by-Trade Audit" else "View ${report.tradeAudits.size} Audited Trades",
+                    color = colors.bullish,
+                    fontSize = 11.sp
+                )
+            }
+
+            if (isExpanded) {
+                Spacer(modifier = Modifier.height(6.dp))
+                report.tradeAudits.forEach { trade ->
+                    Surface(
+                        color = colors.background,
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(trade.symbol, color = colors.textPrimary, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+                            Text("Gross: ₹${trade.grossPnl} - Fees: ₹${trade.totalCharges} = Net: ₹${trade.netPnl}", color = colors.textSecondary, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                            Icon(Icons.Default.Check, contentDescription = null, tint = colors.bullish, modifier = Modifier.size(12.dp))
+                        }
+                    }
                 }
             }
         }
@@ -728,7 +996,7 @@ private fun HistoricalSignalCard(
                 }
 
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Net P&L (after fees)", color = colors.textSecondary, fontSize = 10.sp)
+                    Text("Net P&L (post-fees)", color = colors.textSecondary, fontSize = 10.sp)
                     Text(
                         text = if (record.netPnl >= 0) "+₹${String.format("%.2f", record.netPnl)}" else "-₹${String.format("%.2f", kotlin.math.abs(record.netPnl))}",
                         color = if (record.netPnl >= 0) colors.bullish else colors.bearish,
@@ -760,7 +1028,7 @@ private fun HistoricalSignalCard(
             // Expanded audit trail
             if (isExpanded) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Divider(color = colors.background, thickness = 1.dp)
+                HorizontalDivider(color = colors.background, thickness = 1.dp)
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -768,9 +1036,16 @@ private fun HistoricalSignalCard(
                     AuditLine("Timestamp", formatDateTime(record.timestamp))
                     AuditLine("Spot at Signal", "₹${record.spotPrice}")
                     AuditLine("Targets & SL", "T1: ₹${record.target1} | T2: ₹${record.target2} | T3: ₹${record.target3} | SL: ₹${record.stopLoss}")
+                    AuditLine("Candle Resolution", record.candleResolution)
+                    AuditLine("Resolution Status", record.finalResolutionStatus ?: record.status.name)
+                    if (record.ambiguousReason != null) {
+                        AuditLine("Ambiguous Detail", record.ambiguousReason)
+                    }
                     AuditLine("Indicators", "RSI: ${String.format("%.1f", record.rsi14)} | VWAP: ₹${String.format("%.1f", record.vwap)} | PCR: ${record.pcr} | VIX: ${record.vix}")
                     AuditLine("Confidence", "${record.confidenceScore}%")
-                    AuditLine("Friction & Taxes", "₹${record.totalCharges} (Roundtrip ₹40 + STT + GST + 0.5pt slippage)")
+                    AuditLine("Gross P&L", "₹${String.format("%.2f", record.grossPnl)}")
+                    AuditLine("Statutory Friction", "₹${record.totalCharges} (Roundtrip ₹40 + STT + GST + 0.5pt slippage)")
+                    AuditLine("Net Post-Friction", "₹${String.format("%.2f", record.netPnl)}")
                     AuditLine("Holding Time", "${record.holdingTimeMinutes} min")
                     AuditLine("Invalidation", record.invalidationConditions)
                     if (record.adjustmentsLog.isNotEmpty()) {

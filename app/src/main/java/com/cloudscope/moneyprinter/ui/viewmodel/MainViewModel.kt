@@ -466,13 +466,17 @@ class MainViewModel(
         val metrics = repo.computeAccuracyMetrics(signals)
         val insights = StrategyImprovementEngine.generateInsights(signals)
         val comparisons = StrategyImprovementEngine.compareStrategyVersions(signals)
+        val cohorts = StrategyImprovementEngine.evaluateStrategyCohorts(signals)
+        val auditReport = com.cloudscope.moneyprinter.domain.audit.ReconciliationAuditor.auditLedgerAndMetrics(signals, metrics)
 
         _uiState.update {
             it.copy(
                 historicalSignals = signals,
                 accuracyMetrics = metrics,
                 strategyInsights = insights,
-                strategyComparisons = comparisons
+                strategyComparisons = comparisons,
+                strategyCohortMetrics = cohorts,
+                reconciliationReport = auditReport
             )
         }
     }

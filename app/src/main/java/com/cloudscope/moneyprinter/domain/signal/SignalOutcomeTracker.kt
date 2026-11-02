@@ -15,7 +15,8 @@ object SignalOutcomeTracker {
     fun createRecordFromSignal(
         signal: TradingSignal,
         indicators: TechnicalIndicators,
-        isPaperTrade: Boolean = false
+        isPaperTrade: Boolean = false,
+        candleResolution: String = "5m"
     ): HistoricalSignalRecord {
         return HistoricalSignalRecord(
             id = signal.signalId,
@@ -55,15 +56,19 @@ object SignalOutcomeTracker {
             totalCharges = 0.0,
             holdingTimeMinutes = 0,
             strategyType = signal.strategyType,
-            timeframe = "5m",
+            timeframe = candleResolution,
             isPaperTrade = isPaperTrade,
-            adjustmentsLog = listOf("Signal initialized in PENDING_ENTRY status at entry ₹${signal.entryPrice}")
+            adjustmentsLog = listOf("Signal initialized in PENDING_ENTRY status at entry ₹${signal.entryPrice}"),
+            ambiguousReason = null,
+            candleResolution = candleResolution,
+            targetAndSlSameCandle = false,
+            finalResolutionStatus = null
         )
     }
 
     /**
      * Evaluates a signal record against current option prices (LTP, high, low) and market time.
-     * Returns an updated HistoricalSignalRecord (or original if unchanged).
+     * Incorporates sub-candle finer sequence data where available to resolve potential ambiguous candles.
      */
     fun evaluateSignal(
         record: HistoricalSignalRecord,
@@ -71,7 +76,9 @@ object SignalOutcomeTracker {
         candleHigh: Double = currentOptionLtp,
         candleLow: Double = currentOptionLtp,
         currentSpotPrice: Double = record.spotPrice,
-        currentTimestamp: Long = System.currentTimeMillis()
+        currentTimestamp: Long = System.currentTimeMillis(),
+        candleResolution: String = record.candleResolution,
+        subCandles: List<HistoricalCandle>? = null
     ): HistoricalSignalRecord {
         if (record.status == SignalLifecycleStatus.CLOSED ||
             record.status == SignalLifecycleStatus.CANCELLED ||
@@ -85,7 +92,6 @@ object SignalOutcomeTracker {
 
         // 1. PENDING_ENTRY handling
         if (record.status == SignalLifecycleStatus.PENDING_ENTRY) {
-            // Check if expired (pending for > 2 hours or after 15:00 IST without entry)
             val cal = Calendar.getInstance(IST_TIMEZONE).apply { timeInMillis = currentTimestamp }
             val hour = cal.get(Calendar.HOUR_OF_DAY)
             val minute = cal.get(Calendar.MINUTE)
@@ -99,11 +105,12 @@ object SignalOutcomeTracker {
                     outcome = TradeOutcome.UNFILLED,
                     exitReason = ExitReason.EXPIRED_UNFILLED,
                     exitTimestamp = currentTimestamp,
+                    finalResolutionStatus = "EXPIRED_UNFILLED",
                     adjustmentsLog = logs
                 )
             }
 
-            // Entry condition: price touched entry price (market traded at or below entry price for BUY)
+            // Entry condition: market price traded at or below entry price for BUY
             val entryFilled = candleLow <= record.entryPrice || currentOptionLtp <= (record.entryPrice * 1.005)
             if (entryFilled) {
                 logs.add("Entry confirmed filled at ₹${record.entryPrice} at ${formatTime(currentTimestamp)}")
@@ -122,17 +129,68 @@ object SignalOutcomeTracker {
         val entryTime = record.entryTimestamp ?: record.timestamp
         val holdingMinutes = max(1L, (currentTimestamp - entryTime) / (60 * 1000L))
 
-        // Check Ambiguous Candle: Target 1 and Stop Loss both triggered in the same candle
         val targetMet = candleHigh >= record.target1
         val slMet = candleLow <= record.stopLoss
 
+        // Check Ambiguous Candle: Target 1 and Stop Loss both triggered within the same candle
         if (targetMet && slMet) {
-            // Ambiguous candle resolution: do NOT assume favorable outcome!
-            // Assume breakeven price with loss of transaction friction
+            // Step 2a: Try to resolve sequence using finer-grained sub-candles if available
+            var resolvedBySubCandles = false
+            var subCandleResolvedWinner: TradeOutcome? = null
+            var subCandleExitReason: ExitReason? = null
+            var subCandleExitPrice = 0.0
+
+            if (!subCandles.isNullOrEmpty()) {
+                for (sc in subCandles) {
+                    val scSlMet = sc.low <= record.stopLoss
+                    val scTgtMet = sc.high >= record.target1
+
+                    if (scSlMet && !scTgtMet) {
+                        resolvedBySubCandles = true
+                        subCandleResolvedWinner = TradeOutcome.LOSS
+                        subCandleExitReason = ExitReason.STOP_LOSS
+                        subCandleExitPrice = record.stopLoss
+                        break
+                    } else if (scTgtMet && !scSlMet) {
+                        resolvedBySubCandles = true
+                        subCandleResolvedWinner = TradeOutcome.WIN
+                        subCandleExitReason = ExitReason.TARGET_1
+                        subCandleExitPrice = record.target1
+                        break
+                    }
+                }
+            }
+
+            if (resolvedBySubCandles && subCandleResolvedWinner != null && subCandleExitReason != null) {
+                val (gross, net) = ChargesCalculator.calculateNetPnl(record.entryPrice, subCandleExitPrice, lots, lotSize)
+                val charges = ChargesCalculator.calculate(record.entryPrice, subCandleExitPrice, lots, lotSize)
+                logs.add("Ambiguous candle resolved via 1m sub-candle sequence: ${subCandleExitReason.name} triggered first at ₹$subCandleExitPrice at ${formatTime(currentTimestamp)}")
+
+                return record.copy(
+                    status = SignalLifecycleStatus.CLOSED,
+                    actualExitPrice = subCandleExitPrice,
+                    exitTimestamp = currentTimestamp,
+                    exitReason = subCandleExitReason,
+                    outcome = subCandleResolvedWinner,
+                    grossPnl = gross,
+                    netPnl = net,
+                    totalCharges = charges.totalCharges,
+                    holdingTimeMinutes = holdingMinutes,
+                    targetAndSlSameCandle = true,
+                    candleResolution = candleResolution,
+                    ambiguousReason = "Simultaneous candle touch resolved chronologically via 1m sequence",
+                    finalResolutionStatus = "RESOLVED_VIA_SUBCANDLE_SEQUENCE",
+                    adjustmentsLog = logs
+                )
+            }
+
+            // Step 2b: Sub-candles not available or still simultaneous.
+            // Under strict Phase 3 quantitative rules: NEVER count as a win or loss!
             val exitPrice = record.entryPrice
             val (gross, net) = ChargesCalculator.calculateNetPnl(record.entryPrice, exitPrice, lots, lotSize)
             val charges = ChargesCalculator.calculate(record.entryPrice, exitPrice, lots, lotSize)
-            logs.add("Ambiguous candle detected: Target and SL touched within same window. Exited at breakeven ₹$exitPrice at ${formatTime(currentTimestamp)}")
+            val reasonText = "Target 1 (₹${record.target1}) and SL (₹${record.stopLoss}) hit in same $candleResolution candle [H: ₹$candleHigh, L: ₹$candleLow]. Excluded from win rate denominator."
+            logs.add("Ambiguous candle detected: $reasonText Exited at breakeven ₹$exitPrice at ${formatTime(currentTimestamp)}")
 
             return record.copy(
                 status = SignalLifecycleStatus.CLOSED,
@@ -144,6 +202,10 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                targetAndSlSameCandle = true,
+                candleResolution = candleResolution,
+                ambiguousReason = reasonText,
+                finalResolutionStatus = "AMBIGUOUS_UNRESOLVED_EXCLUDED_FROM_WIN_RATE",
                 adjustmentsLog = logs
             )
         }
@@ -165,6 +227,7 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                finalResolutionStatus = "RESOLVED_TARGET_3",
                 adjustmentsLog = logs
             )
         }
@@ -186,6 +249,7 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                finalResolutionStatus = "RESOLVED_TARGET_2",
                 adjustmentsLog = logs
             )
         }
@@ -207,6 +271,7 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                finalResolutionStatus = "RESOLVED_TARGET_1",
                 adjustmentsLog = logs
             )
         }
@@ -228,6 +293,7 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                finalResolutionStatus = "RESOLVED_STOP_LOSS",
                 adjustmentsLog = logs
             )
         }
@@ -257,6 +323,7 @@ object SignalOutcomeTracker {
                 netPnl = net,
                 totalCharges = charges.totalCharges,
                 holdingTimeMinutes = holdingMinutes,
+                finalResolutionStatus = "RESOLVED_SQUARE_OFF_1515",
                 adjustmentsLog = logs
             )
         }
