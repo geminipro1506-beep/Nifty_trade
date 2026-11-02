@@ -94,12 +94,14 @@ fun TradeSignalCard(
     val actionText = when (signal.action) {
         SignalAction.BUY_CE -> "ACTION: BUY NIFTY ${signal.recommendedStrike?.toInt() ?: 0} CE"
         SignalAction.BUY_PE -> "ACTION: BUY NIFTY ${signal.recommendedStrike?.toInt() ?: 0} PE"
+        SignalAction.WAIT -> "WAIT FOR SETUP"
         SignalAction.NO_TRADE -> "NO TRADE"
     }
 
     val actionColor = when (signal.action) {
         SignalAction.BUY_CE -> colors.bullish
         SignalAction.BUY_PE -> colors.bearish
+        SignalAction.WAIT -> colors.sideways
         SignalAction.NO_TRADE -> colors.sideways
     }
 

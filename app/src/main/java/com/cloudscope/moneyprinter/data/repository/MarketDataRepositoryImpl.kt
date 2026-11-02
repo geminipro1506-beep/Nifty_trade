@@ -361,21 +361,18 @@ class MarketDataRepositoryImpl(
 
     private fun buildOptionChain(spot: Double) {
         val atmStrike = OptionsSelector.roundToStrikeStep(spot)
-        val strikes = listOf(
-            atmStrike - 150.0,
-            atmStrike - 100.0,
-            atmStrike - 50.0,
-            atmStrike,
-            atmStrike + 50.0,
-            atmStrike + 100.0,
-            atmStrike + 150.0
-        )
+        val strikes = (-7..7).map { atmStrike + (it * 50.0) }
 
         val rows = mutableListOf<StrikeRow>()
         var totalCallOi = 0L
         var totalPutOi = 0L
         var totalCallOiChange = 0L
         var totalPutOiChange = 0L
+
+        var maxCallOi = 0L
+        var highestCallStrike = atmStrike + 150.0
+        var maxPutOi = 0L
+        var highestPutStrike = atmStrike - 150.0
 
         for (strike in strikes) {
             val ceDelta = BlackScholes.calculateDelta(spot, strike, 3.0 / 365.0, 0.14, true)
@@ -384,10 +381,22 @@ class MarketDataRepositoryImpl(
             val ceBaseLtp = max(2.0, (spot - strike) * 0.8 + 80.0)
             val peBaseLtp = max(2.0, (strike - spot) * 0.8 + 80.0)
 
-            val ceOi = (800000L..2500000L).random()
-            val peOi = (900000L..2700000L).random()
-            val ceOiChange = (-50000L..200000L).random()
-            val peOiChange = (-50000L..220000L).random()
+            // Realistic OI distribution peaking around resistance/support
+            val distance = kotlin.math.abs(strike - atmStrike)
+            val baseOiFactor = max(0.4, 1.0 - (distance / 600.0))
+            val ceOi = (1200000L * baseOiFactor).toLong() + (if (strike == atmStrike + 150.0) 900000L else 0L)
+            val peOi = (1300000L * baseOiFactor).toLong() + (if (strike == atmStrike - 150.0) 950000L else 0L)
+            val ceOiChange = if (strike >= atmStrike) 120000L else -25000L
+            val peOiChange = if (strike <= atmStrike) 140000L else -15000L
+
+            if (ceOi > maxCallOi) {
+                maxCallOi = ceOi
+                highestCallStrike = strike
+            }
+            if (peOi > maxPutOi) {
+                maxPutOi = peOi
+                highestPutStrike = strike
+            }
 
             totalCallOi += ceOi
             totalPutOi += peOi
@@ -398,13 +407,13 @@ class MarketDataRepositoryImpl(
                 symbol = "NIFTY ${strike.toInt()} CE",
                 strikePrice = strike,
                 optionType = OptionType.CE,
-                expiryDate = "Current Weekly",
+                expiryDate = "07 NOV 2024",
                 lastPrice = round(ceBaseLtp * 20.0) / 20.0,
-                change = 5.2,
-                pChange = 4.1,
+                change = if (spot >= strike) 8.5 else -4.2,
+                pChange = if (spot >= strike) 6.4 else -3.8,
                 openInterest = ceOi,
                 changeInOi = ceOiChange,
-                volume = 450000L,
+                volume = (ceOi * 0.35).toLong(),
                 impliedVolatility = 13.8,
                 delta = ceDelta,
                 gamma = 0.002,
@@ -420,13 +429,13 @@ class MarketDataRepositoryImpl(
                 symbol = "NIFTY ${strike.toInt()} PE",
                 strikePrice = strike,
                 optionType = OptionType.PE,
-                expiryDate = "Current Weekly",
+                expiryDate = "07 NOV 2024",
                 lastPrice = round(peBaseLtp * 20.0) / 20.0,
-                change = -4.8,
-                pChange = -3.5,
+                change = if (spot <= strike) 7.8 else -5.1,
+                pChange = if (spot <= strike) 5.9 else -4.4,
                 openInterest = peOi,
                 changeInOi = peOiChange,
-                volume = 410000L,
+                volume = (peOi * 0.32).toLong(),
                 impliedVolatility = 14.2,
                 delta = peDelta,
                 gamma = 0.002,
@@ -453,7 +462,10 @@ class MarketDataRepositoryImpl(
             totalCallOiChange = totalCallOiChange,
             totalPutOiChange = totalPutOiChange,
             rows = rows,
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            highestCallOiStrike = highestCallStrike,
+            highestPutOiStrike = highestPutStrike,
+            expiryDates = listOf("07 NOV 2024", "14 NOV 2024", "28 NOV 2024")
         )
     }
 }

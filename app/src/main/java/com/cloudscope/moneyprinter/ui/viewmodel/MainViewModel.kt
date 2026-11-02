@@ -4,11 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudscope.moneyprinter.data.local.SecurePreferences
 import com.cloudscope.moneyprinter.data.model.*
-import com.cloudscope.moneyprinter.data.repository.MarketDataRepository
 import com.cloudscope.moneyprinter.domain.backtest.BacktestEngine
 import com.cloudscope.moneyprinter.domain.indicator.IndicatorEngine
 import com.cloudscope.moneyprinter.domain.risk.RiskManager
 import com.cloudscope.moneyprinter.domain.signal.SignalEngine
+import com.cloudscope.moneyprinter.data.repository.MarketDataRepository
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,6 +61,42 @@ class MainViewModel(
 
         // Initial fetch
         refreshMarketData()
+    }
+
+    fun selectTab(tab: TerminalNavTab) {
+        _uiState.update { it.copy(selectedTab = tab) }
+    }
+
+    fun setOptionChainSearch(query: String) {
+        _uiState.update { it.copy(optionChainSearchQuery = query) }
+    }
+
+    fun setSelectedExpiry(expiry: String) {
+        _uiState.update { it.copy(selectedExpiryDate = expiry) }
+    }
+
+    fun requestTradeExecution(signal: TradingSignal, broker: BrokerType) {
+        _uiState.update {
+            it.copy(
+                tradeConfirmationSignal = signal,
+                targetExecutionBroker = broker
+            )
+        }
+    }
+
+    fun dismissTradeExecution() {
+        _uiState.update {
+            it.copy(
+                tradeConfirmationSignal = null,
+                targetExecutionBroker = null
+            )
+        }
+    }
+
+    fun toggleAutoRefresh() {
+        val next = !_uiState.value.autoRefreshEnabled
+        securePreferences.setAutoRefreshEnabled(next)
+        _uiState.update { it.copy(autoRefreshEnabled = next) }
     }
 
     fun toggleTheme() {

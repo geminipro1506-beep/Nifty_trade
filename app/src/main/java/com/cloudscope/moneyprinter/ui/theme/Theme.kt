@@ -11,6 +11,7 @@ data class TerminalColorScheme(
     val background: Color,
     val surface: Color,
     val card: Color,
+    val cardElevated: Color,
     val border: Color,
     val textPrimary: Color,
     val textSecondary: Color,
@@ -21,6 +22,9 @@ data class TerminalColorScheme(
     val bearishBg: Color,
     val sideways: Color,
     val sidewaysBg: Color,
+    val accentBlue: Color,
+    val itmCallTint: Color,
+    val itmPutTint: Color,
     val isDark: Boolean
 )
 
@@ -29,6 +33,7 @@ val LocalTerminalColors = staticCompositionLocalOf {
         background = TerminalBackgroundDark,
         surface = TerminalSurfaceDark,
         card = TerminalCardDark,
+        cardElevated = TerminalCardElevatedDark,
         border = TerminalBorderDark,
         textPrimary = TerminalTextPrimaryDark,
         textSecondary = TerminalTextSecondaryDark,
@@ -37,8 +42,11 @@ val LocalTerminalColors = staticCompositionLocalOf {
         bullishBg = BullishGreenBgDark,
         bearish = BearishRedDark,
         bearishBg = BearishRedBgDark,
-        sideways = SidewaysYellowDark,
-        sidewaysBg = SidewaysYellowBgDark,
+        sideways = SidewaysAmberDark,
+        sidewaysBg = SidewaysAmberBgDark,
+        accentBlue = AccentBlueDark,
+        itmCallTint = ItmCallTintDark,
+        itmPutTint = ItmPutTintDark,
         isDark = true
     )
 }
@@ -71,6 +79,7 @@ fun CloudScopeTheme(
             background = TerminalBackgroundDark,
             surface = TerminalSurfaceDark,
             card = TerminalCardDark,
+            cardElevated = TerminalCardElevatedDark,
             border = TerminalBorderDark,
             textPrimary = TerminalTextPrimaryDark,
             textSecondary = TerminalTextSecondaryDark,
@@ -79,8 +88,11 @@ fun CloudScopeTheme(
             bullishBg = BullishGreenBgDark,
             bearish = BearishRedDark,
             bearishBg = BearishRedBgDark,
-            sideways = SidewaysYellowDark,
-            sidewaysBg = SidewaysYellowBgDark,
+            sideways = SidewaysAmberDark,
+            sidewaysBg = SidewaysAmberBgDark,
+            accentBlue = AccentBlueDark,
+            itmCallTint = ItmCallTintDark,
+            itmPutTint = ItmPutTintDark,
             isDark = true
         )
     } else {
@@ -88,6 +100,7 @@ fun CloudScopeTheme(
             background = TerminalBackgroundLight,
             surface = TerminalSurfaceLight,
             card = TerminalCardLight,
+            cardElevated = TerminalCardElevatedLight,
             border = TerminalBorderLight,
             textPrimary = TerminalTextPrimaryLight,
             textSecondary = TerminalTextSecondaryLight,
@@ -96,8 +109,11 @@ fun CloudScopeTheme(
             bullishBg = BullishGreenBgLight,
             bearish = BearishRedLight,
             bearishBg = BearishRedBgLight,
-            sideways = SidewaysYellowLight,
-            sidewaysBg = SidewaysYellowBgLight,
+            sideways = SidewaysAmberLight,
+            sidewaysBg = SidewaysAmberBgLight,
+            accentBlue = AccentBlueLight,
+            itmCallTint = ItmCallTintLight,
+            itmPutTint = ItmPutTintLight,
             isDark = false
         )
     }

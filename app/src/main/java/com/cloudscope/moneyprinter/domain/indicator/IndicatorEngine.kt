@@ -160,6 +160,7 @@ object IndicatorEngine {
     ): TechnicalIndicators {
         val lastPrice = candles.lastOrNull()?.close ?: 0.0
         val rsi = calculateRsi(candles, 14)
+        val ema9 = calculateEma(candles, 9)
         val ema20 = calculateEma(candles, 20)
         val ema50 = calculateEma(candles, 50)
         val ema200 = calculateEma(candles, 200)
@@ -213,7 +214,8 @@ object IndicatorEngine {
             orbState = orbState,
             pcr = pcr,
             vix = vix,
-            marketDirection = direction
+            marketDirection = direction,
+            ema9 = ema9
         )
     }
 }

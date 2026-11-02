@@ -117,4 +117,13 @@ class SignalEngineTest {
 
         assertEquals(SignalAction.NO_TRADE, signal.action)
     }
+
+    @Test
+    fun testWaitActionWhenConfidenceMarginal() {
+        // When confidence is marginal or setup is pending
+        val waitSignal = TradingSignal.wait("Waiting for EMA confirmation", spot = 24900.0)
+        assertEquals(SignalAction.WAIT, waitSignal.action)
+        assertEquals(SignalStatus.INACTIVE, waitSignal.status)
+        assertTrue(waitSignal.confirmationReasons.first().contains("Waiting for EMA"))
+    }
 }

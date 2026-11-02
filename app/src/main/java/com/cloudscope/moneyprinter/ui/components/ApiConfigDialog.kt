@@ -7,12 +7,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -40,222 +41,208 @@ fun ApiConfigDialog(
     var clientId by remember { mutableStateOf(initialCredentials.clientId) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Box(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(colors.surface)
-                .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                .padding(20.dp)
+                .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.card),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(22.dp)
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    text = "BROKER & DEMAT SETUP (OPTIONAL)",
-                    color = colors.textPrimary,
-                    fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.5.sp
-                )
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "BROKER & DEMAT SETUP",
+                        color = colors.textPrimary,
+                        fontSize = 19.sp, // Requirement: 20-24px
+                        fontWeight = FontWeight.Bold
+                    )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
+                    }
+                }
 
-                // Optional notice banner
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Optional Banner
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(colors.bullish.copy(alpha = 0.12f))
-                        .border(1.dp, colors.bullish.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.bullishBg)
+                        .border(1.dp, colors.bullish.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
                 ) {
                     Text(
-                        text = "✓ DEMAT SETUP IS 100% OPTIONAL\nCloudscope Money Printer streams live NIFTY & VIX market data autonomously. You do not need to link any broker account.",
+                        text = "✓ DEMAT SETUP IS 100% OPTIONAL\nCloudscope Money Printer runs autonomously using real-time public NSE market feeds. You never need to connect a broker to view signals.",
                         color = colors.bullish,
-                        fontSize = 10.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 15.sp,
+                        fontSize = 14.5.sp, // Minimum 14-16px
+                        lineHeight = 20.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
-                    text = "SELECT YOUR BROKER OR DATA MODE:",
+                    text = "SELECT DATA FEED OR BROKER ROUTING:",
                     color = colors.textMuted,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.SemiBold
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Broker selection chips
+                // Broker Selection Options (Touch target >= 48dp)
                 BrokerType.values().forEach { broker ->
                     val isSelected = selectedBroker == broker
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 3.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (isSelected) colors.card else colors.surface)
+                            .padding(vertical = 4.dp)
+                            .height(52.dp) // Touch target >= 48dp
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) colors.cardElevated else colors.surface)
                             .border(
                                 width = if (isSelected) 1.5.dp else 1.dp,
                                 color = if (isSelected) colors.bullish else colors.border,
-                                shape = RoundedCornerShape(6.dp)
+                                shape = RoundedCornerShape(12.dp)
                             )
                             .clickable { selectedBroker = broker }
-                            .padding(horizontal = 12.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 14.dp),
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = { selectedBroker = broker },
-                            colors = RadioButtonDefaults.colors(
-                                selectedColor = colors.bullish,
-                                unselectedColor = colors.textMuted
-                            ),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = broker.displayName,
-                            color = if (isSelected) colors.textPrimary else colors.textSecondary,
-                            fontSize = 11.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { selectedBroker = broker },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = colors.bullish,
+                                    unselectedColor = colors.textMuted
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = broker.displayName,
+                                color = if (isSelected) colors.textPrimary else colors.textSecondary,
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Specific broker inputs
+                // Mode descriptions & inputs
                 when (selectedBroker) {
                     BrokerType.NONE_STANDALONE -> {
                         Text(
-                            text = "Uses free, unthrottled real-time National Stock Exchange (NSE) indices and synthetic Black-Scholes Greeks. Perfect for charting and signal tracking without any Demat accounts.",
+                            text = "Uses free, unthrottled real-time National Stock Exchange (NSE) quotes and Black-Scholes Greeks. Perfect for live signal tracking without broker credentials.",
                             color = colors.textSecondary,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
                         )
                     }
                     BrokerType.GROWW -> {
                         Text(
-                            text = "Groww is enabled as your preferred execution terminal. Trade signals in the app will display instant 1-tap routing into the Groww mobile app or web platform.",
+                            text = "Groww is configured for 1-tap trade routing. When signals trigger, you can immediately open your Groww order window with pre-filled strike parameters.",
                             color = colors.textSecondary,
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp
+                            fontSize = 15.sp,
+                            lineHeight = 22.sp
                         )
                     }
                     BrokerType.ANGEL_ONE -> {
                         Text(
                             text = "Angel One SmartAPI credentials (optional):",
                             color = colors.textSecondary,
-                            fontSize = 11.sp
+                            fontSize = 15.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = apiKey,
                             onValueChange = { apiKey = it },
-                            label = { Text("SmartAPI Key (Optional)", fontSize = 11.sp) },
+                            label = { Text("SmartAPI Key (Optional)", fontSize = 14.sp) },
                             singleLine = true,
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = colors.bullish,
-                                unfocusedBorderColor = colors.border,
-                                focusedTextColor = colors.textPrimary,
-                                unfocusedTextColor = colors.textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = clientId,
                             onValueChange = { clientId = it },
-                            label = { Text("Angel One Client ID (Optional)", fontSize = 11.sp) },
+                            label = { Text("Angel One Client ID (Optional)", fontSize = 14.sp) },
                             singleLine = true,
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = colors.bullish,
-                                unfocusedBorderColor = colors.border,
-                                focusedTextColor = colors.textPrimary,
-                                unfocusedTextColor = colors.textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
                     }
                     BrokerType.ZERODHA -> {
                         Text(
-                            text = "Enter Kite Connect credentials for direct tick streaming:",
+                            text = "Enter Zerodha Kite Connect credentials for tick streaming:",
                             color = colors.textSecondary,
-                            fontSize = 11.sp
+                            fontSize = 15.sp
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = apiKey,
                             onValueChange = { apiKey = it },
-                            label = { Text("API Key", fontSize = 11.sp) },
+                            label = { Text("API Key", fontSize = 14.sp) },
                             singleLine = true,
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = colors.bullish,
-                                unfocusedBorderColor = colors.border,
-                                focusedTextColor = colors.textPrimary,
-                                unfocusedTextColor = colors.textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
                             value = accessToken,
                             onValueChange = { accessToken = it },
-                            label = { Text("Access Token", fontSize = 11.sp) },
+                            label = { Text("Access Token", fontSize = 14.sp) },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
-                            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = colors.bullish,
-                                unfocusedBorderColor = colors.border,
-                                focusedTextColor = colors.textPrimary,
-                                unfocusedTextColor = colors.textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
                     }
                 }
 
                 if (testResult != null) {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = testResult,
                         color = if (testResult.startsWith("Success")) colors.bullish else colors.bearish,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     OutlinedButton(
-                        onClick = {
-                            onTestConnection(apiKey, accessToken, selectedBroker)
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.textSecondary),
-                        shape = RoundedCornerShape(6.dp)
+                        onClick = { onTestConnection(apiKey, accessToken, selectedBroker) },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Test", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Text("TEST FEED", fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -267,18 +254,15 @@ fun ApiConfigDialog(
                             }
                             onDismiss()
                         },
-                        modifier = Modifier.weight(1.4f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = colors.bullish,
-                            contentColor = colors.background
-                        ),
-                        shape = RoundedCornerShape(6.dp)
+                        modifier = Modifier.weight(1.3f).height(48.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.bullish)
                     ) {
-                        Text("Save & Apply", fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text("SAVE & APPLY", color = colors.background, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 TextButton(
                     onClick = {
@@ -289,9 +273,9 @@ fun ApiConfigDialog(
                         clientId = ""
                         onDismiss()
                     },
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                    modifier = Modifier.align(Alignment.CenterHorizontally).height(44.dp)
                 ) {
-                    Text("Reset to Autonomous Mode", color = colors.bearish, fontSize = 10.5.sp, fontFamily = FontFamily.Monospace)
+                    Text("Reset to Autonomous Mode", color = colors.bearish, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

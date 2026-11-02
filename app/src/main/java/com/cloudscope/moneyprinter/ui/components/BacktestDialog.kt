@@ -6,12 +6,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -34,18 +37,19 @@ fun BacktestDialog(
     }
 
     Dialog(onDismissRequest = onDismiss) {
-        Box(
+        Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f)
-                .clip(RoundedCornerShape(12.dp))
-                .background(colors.surface)
-                .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                .padding(18.dp)
+                .padding(14.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.card),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(22.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 // Header
@@ -57,26 +61,15 @@ fun BacktestDialog(
                     Text(
                         text = "HISTORICAL STRATEGY AUDIT",
                         color = colors.textPrimary,
-                        fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                        fontSize = 18.sp, // Requirement: 20-24px
+                        fontWeight = FontWeight.Bold
                     )
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(colors.bullish.copy(alpha = 0.15f))
-                            .border(0.5.dp, colors.bullish, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
                     ) {
-                        Text(
-                            text = "WALK-FORWARD OOS",
-                            color = colors.bullish,
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = colors.textSecondary)
                     }
                 }
 
@@ -84,116 +77,81 @@ fun BacktestDialog(
 
                 Text(
                     text = result?.validationNotes
-                        ?: "Deterministic out-of-sample backtest with actual slippage (0.5 pt), STT 0.1%, Brokerage ₹40 roundtrip, and GST 18%.",
+                        ?: "Deterministic walk-forward backtest accounting for slippage, STT, exchange turnover fees, and brokerage.",
                     color = colors.textSecondary,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp
+                    fontSize = 15.sp, // Minimum 15-16px
+                    lineHeight = 22.sp
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 // Key Performance Metrics Grid
                 if (result != null) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         MetricBox("WIN RATE", "${String.format("%.1f", result.winRate)}%", colors.bullish)
                         MetricBox("PROFIT FACTOR", String.format("%.2f", result.profitFactor), colors.textPrimary)
                         MetricBox("MAX DRAWDOWN", "${String.format("%.1f", result.maxDrawdownPercent)}%", colors.bearish)
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        val netSign = if (result.netProfit >= 0) "+" else ""
-                        MetricBox("NET P&L", "$netSign₹${indianFormat.format(result.netProfit)}", if (result.netProfit >= 0) colors.bullish else colors.bearish)
-                        MetricBox("TOTAL TRADES", "${result.totalTrades} (${result.winningTrades}W / ${result.losingTrades}L)", colors.textPrimary)
-                        MetricBox("AVG R:R", "1:${String.format("%.1f", result.averageRiskReward)}", colors.textPrimary)
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        MetricBox("EXPECTANCY", "₹${String.format("%.1f", result.expectancy)}/trade", colors.textPrimary)
-                        MetricBox("TAXES & COSTS", "₹${indianFormat.format(result.totalChargesAndTaxes)}", colors.textMuted)
-                        MetricBox("RETURN ON CAP", "${String.format("%.1f", result.returnOnCapitalPercent)}%", if (result.returnOnCapitalPercent >= 0) colors.bullish else colors.bearish)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        MetricBox("TOTAL TRADES", "${result.totalTrades}", colors.textPrimary)
+                        MetricBox("WINNING TRADES", "${result.winningTrades}", colors.bullish)
+                        MetricBox("LOSING TRADES", "${result.losingTrades}", colors.bearish)
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Divider(color = colors.border, thickness = 0.5.dp)
-                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Recent Executed Trades
-                    Text(
-                        text = "AUDITED TRADE LOG",
-                        color = colors.textSecondary,
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (result.trades.isEmpty()) {
-                        Text(
-                            text = "No trades generated in the selected backtest sample.",
-                            color = colors.textMuted,
-                            fontSize = 11.sp
-                        )
-                    } else {
-                        for (trade in result.trades.take(6)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "${trade.symbol} (${trade.exitReason.name})",
-                                        color = colors.textPrimary,
-                                        fontSize = 10.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "Entry: ₹${String.format("%.1f", trade.entryPrice)} → Exit: ₹${String.format("%.1f", trade.exitPrice)}",
-                                        color = colors.textMuted,
-                                        fontSize = 9.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                }
-
-                                Text(
-                                    text = "${if (trade.netProfit >= 0) "+" else ""}₹${String.format("%.1f", trade.netProfit)}",
-                                    color = if (trade.netProfit >= 0) colors.bullish else colors.bearish,
-                                    fontSize = 11.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                    // Financial Summary Box
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colors.cardElevated)
+                            .padding(14.dp)
+                    ) {
+                        Column {
+                            FinanceRow(label = "Net Simulated Profit:", value = "₹${indianFormat.format(result.netProfit)}", color = if (result.netProfit >= 0) colors.bullish else colors.bearish)
+                            FinanceRow(label = "Total Brokerage & Taxes:", value = "₹${indianFormat.format(result.totalChargesAndTaxes)}", color = colors.textSecondary)
+                            FinanceRow(label = "Average Trade P&L:", value = "₹${indianFormat.format(result.expectancy)}", color = if (result.expectancy >= 0) colors.bullish else colors.bearish)
+                            FinanceRow(label = "Return on Capital:", value = "${String.format("%.1f", result.returnOnCapitalPercent)}%", color = colors.bullish)
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Action buttons
+                Button(
+                    onClick = onRunBacktest,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp), // Touch target >= 48dp
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.bullish)
                 ) {
-                    OutlinedButton(
-                        onClick = onRunBacktest,
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("Re-Run Simulation", color = colors.textPrimary, fontSize = 12.sp)
-                    }
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Run", tint = colors.background)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("RE-EXECUTE SIMULATION", color = colors.background, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
 
-                    Button(
-                        onClick = onDismiss,
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.bullish)
-                    ) {
-                        Text("Close", color = colors.background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("CLOSE", color = colors.textPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -201,22 +159,32 @@ fun BacktestDialog(
 }
 
 @Composable
-private fun MetricBox(
-    label: String,
-    value: String,
-    color: androidx.compose.ui.graphics.Color
-) {
+private fun MetricBox(label: String, value: String, valueColor: Color) {
     val colors = LocalTerminalColors.current
-    Column(modifier = Modifier.width(90.dp)) {
-        Text(text = label, color = colors.textMuted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = value,
-            color = color,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.cardElevated)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = label, color = colors.textMuted, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(text = value, color = valueColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun FinanceRow(label: String, value: String, color: Color) {
+    val colors = LocalTerminalColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, color = colors.textSecondary, fontSize = 14.5.sp)
+        Text(text = value, color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold)
     }
 }
