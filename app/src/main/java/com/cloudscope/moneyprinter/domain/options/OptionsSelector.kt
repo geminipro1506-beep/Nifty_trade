@@ -27,7 +27,8 @@ object OptionsSelector {
         val target2: Double,
         val riskRewardRatio: Double,
         val delta: Double,
-        val bidAskSpread: Double
+        val bidAskSpread: Double,
+        val target3: Double = 0.0
     )
 
     fun selectOptimalContract(
@@ -72,9 +73,10 @@ object OptionsSelector {
             val riskAmount = max(15.0, roundToTickSize(entry * 0.20))
             val stopLoss = roundToTickSize(max(5.0, entry - riskAmount))
 
-            // Targets: Target 1 = 1.5x Risk, Target 2 = 2.0x Risk
+            // Targets: Target 1 = 1.5x Risk, Target 2 = 2.0x Risk, Target 3 = 3.0x Risk
             val target1 = roundToTickSize(entry + (riskAmount * 1.5))
             val target2 = roundToTickSize(entry + (riskAmount * 2.0))
+            val target3 = roundToTickSize(entry + (riskAmount * 3.0))
             val riskRewardRatio = round(((target1 - entry) / (entry - stopLoss)) * 10.0) / 10.0
 
             return SelectedOptionRecommendation(
@@ -87,7 +89,8 @@ object OptionsSelector {
                 target2 = target2,
                 riskRewardRatio = riskRewardRatio,
                 delta = contract.delta,
-                bidAskSpread = spread
+                bidAskSpread = spread,
+                target3 = target3
             )
         }
 
@@ -108,6 +111,7 @@ object OptionsSelector {
         val stopLoss = roundToTickSize(entry - riskAmount)
         val target1 = roundToTickSize(entry + (riskAmount * 1.5))
         val target2 = roundToTickSize(entry + (riskAmount * 2.0))
+        val target3 = roundToTickSize(entry + (riskAmount * 3.0))
         val symbol = "NIFTY ${targetStrike.toInt()} ${optionType.name}"
 
         return SelectedOptionRecommendation(
@@ -120,7 +124,8 @@ object OptionsSelector {
             target2 = target2,
             riskRewardRatio = 1.5,
             delta = abs(estimatedDelta),
-            bidAskSpread = 0.5
+            bidAskSpread = 0.5,
+            target3 = target3
         )
     }
 }

@@ -25,7 +25,8 @@ data class TerminalColorScheme(
     val accentBlue: Color,
     val itmCallTint: Color,
     val itmPutTint: Color,
-    val isDark: Boolean
+    val isDark: Boolean,
+    val warning: Color = sideways
 )
 
 val LocalTerminalColors = staticCompositionLocalOf {

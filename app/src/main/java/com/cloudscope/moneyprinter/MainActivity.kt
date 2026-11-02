@@ -6,7 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import com.cloudscope.moneyprinter.data.local.SecurePreferences
+import com.cloudscope.moneyprinter.data.local.db.SignalDatabaseHelper
 import com.cloudscope.moneyprinter.data.repository.MarketDataRepositoryImpl
+import com.cloudscope.moneyprinter.data.repository.SignalRepositoryImpl
 import com.cloudscope.moneyprinter.ui.screens.HomeScreen
 import com.cloudscope.moneyprinter.ui.theme.CloudScopeTheme
 import com.cloudscope.moneyprinter.ui.viewmodel.MainViewModel
@@ -20,7 +22,9 @@ class MainActivity : ComponentActivity() {
 
         val securePreferences = SecurePreferences(applicationContext)
         val repository = MarketDataRepositoryImpl(securePreferences)
-        viewModel = MainViewModel(repository, securePreferences)
+        val dbHelper = SignalDatabaseHelper.getInstance(applicationContext)
+        val signalRepository = SignalRepositoryImpl(dbHelper)
+        viewModel = MainViewModel(repository, securePreferences, signalRepository)
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()

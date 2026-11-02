@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.FormatListNumbered
@@ -41,20 +42,21 @@ fun BottomNavBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(68.dp)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .height(64.dp)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceAround,
             verticalAlignment = Alignment.CenterVertically
         ) {
             val tabs = listOf(
-                Pair(TerminalNavTab.DASHBOARD, Icons.Default.Dashboard),
-                Pair(TerminalNavTab.SIGNALS, Icons.Default.Bolt),
-                Pair(TerminalNavTab.OPTION_CHAIN, Icons.Default.FormatListNumbered),
-                Pair(TerminalNavTab.ANALYSIS, Icons.Default.Analytics),
-                Pair(TerminalNavTab.SETTINGS, Icons.Default.Tune)
+                Triple(TerminalNavTab.DASHBOARD, Icons.Default.Dashboard, "Dashboard"),
+                Triple(TerminalNavTab.SIGNALS, Icons.Default.Bolt, "Signals"),
+                Triple(TerminalNavTab.OPTION_CHAIN, Icons.Default.FormatListNumbered, "Chain"),
+                Triple(TerminalNavTab.PERFORMANCE, Icons.Default.Assessment, "Accuracy"),
+                Triple(TerminalNavTab.ANALYSIS, Icons.Default.Analytics, "Analysis"),
+                Triple(TerminalNavTab.SETTINGS, Icons.Default.Tune, "Settings")
             )
 
-            tabs.forEach { (tab, icon) ->
+            tabs.forEach { (tab, icon, label) ->
                 val isSelected = selectedTab == tab
                 val itemColor = if (isSelected) colors.bullish else colors.textSecondary
                 val bgColor = if (isSelected) colors.bullishBg else colors.surface
@@ -62,11 +64,11 @@ fun BottomNavBar(
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .height(54.dp) // Touch target > 48dp
-                        .clip(RoundedCornerShape(12.dp))
+                        .height(52.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(bgColor)
                         .clickable { onTabSelected(tab) }
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .padding(horizontal = 2.dp, vertical = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -75,15 +77,15 @@ fun BottomNavBar(
                     ) {
                         Icon(
                             imageVector = icon,
-                            contentDescription = tab.title,
+                            contentDescription = label,
                             tint = itemColor,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = tab.title,
+                            text = label,
                             color = itemColor,
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             maxLines = 1
                         )

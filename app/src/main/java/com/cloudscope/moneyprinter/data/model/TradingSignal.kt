@@ -100,12 +100,25 @@ data class TradingSignal(
     val timestamp: Long = System.currentTimeMillis(),
     val strategyType: StrategyType = StrategyType.TREND_FOLLOWING,
     val setupQuality: String = "A+",
-    val expiryDate: String = "Current Weekly (07 NOV)",
+    val expiryDate: String = "Current Weekly",
     val lots: Int = 1,
     val lotSize: Int = 25,
     val capitalRequired: Double = 0.0,
     val estimatedCharges: Double = 55.0,
-    val waitReason: String? = null
+    val waitReason: String? = null,
+    val target3: Double = 0.0,
+    val signalId: String = java.util.UUID.randomUUID().toString(),
+    val premiumAtSignal: Double = entryPrice,
+    val invalidationConditions: String = "Price trades below intraday VWAP or 20 EMA reverses",
+    val actualExitPrice: Double? = null,
+    val exitTimestamp: Long? = null,
+    val exitReason: ExitReason? = null,
+    val outcome: TradeOutcome? = null,
+    val comparableTradesCount: Int = 0,
+    val historicalStrategyWinRate: Double = 0.0,
+    val historicalProfitFactor: Double = 0.0,
+    val hasSufficientHistoricalSample: Boolean = false,
+    val adjustmentsLog: List<String> = emptyList()
 ) {
     companion object {
         fun noTrade(reason: String = "Market conditions are not favourable.") = TradingSignal(

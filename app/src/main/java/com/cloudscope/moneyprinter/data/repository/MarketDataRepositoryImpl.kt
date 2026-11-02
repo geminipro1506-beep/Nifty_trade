@@ -360,6 +360,7 @@ class MarketDataRepositoryImpl(
     }
 
     private fun buildOptionChain(spot: Double) {
+        val expiryInfo = com.cloudscope.moneyprinter.domain.options.ExpiryCalculator.calculateUpcomingExpiries()
         val atmStrike = OptionsSelector.roundToStrikeStep(spot)
         val strikes = (-7..7).map { atmStrike + (it * 50.0) }
 
@@ -375,8 +376,8 @@ class MarketDataRepositoryImpl(
         var highestPutStrike = atmStrike - 150.0
 
         for (strike in strikes) {
-            val ceDelta = BlackScholes.calculateDelta(spot, strike, 3.0 / 365.0, 0.14, true)
-            val peDelta = BlackScholes.calculateDelta(spot, strike, 3.0 / 365.0, 0.14, false)
+            val ceDelta = BlackScholes.calculateDelta(spot, strike, expiryInfo.timeToCurrentExpiryYears, 0.14, true)
+            val peDelta = BlackScholes.calculateDelta(spot, strike, expiryInfo.timeToCurrentExpiryYears, 0.14, false)
 
             val ceBaseLtp = max(2.0, (spot - strike) * 0.8 + 80.0)
             val peBaseLtp = max(2.0, (strike - spot) * 0.8 + 80.0)
@@ -407,7 +408,7 @@ class MarketDataRepositoryImpl(
                 symbol = "NIFTY ${strike.toInt()} CE",
                 strikePrice = strike,
                 optionType = OptionType.CE,
-                expiryDate = "07 NOV 2024",
+                expiryDate = expiryInfo.currentWeekly,
                 lastPrice = round(ceBaseLtp * 20.0) / 20.0,
                 change = if (spot >= strike) 8.5 else -4.2,
                 pChange = if (spot >= strike) 6.4 else -3.8,
@@ -429,7 +430,7 @@ class MarketDataRepositoryImpl(
                 symbol = "NIFTY ${strike.toInt()} PE",
                 strikePrice = strike,
                 optionType = OptionType.PE,
-                expiryDate = "07 NOV 2024",
+                expiryDate = expiryInfo.currentWeekly,
                 lastPrice = round(peBaseLtp * 20.0) / 20.0,
                 change = if (spot <= strike) 7.8 else -5.1,
                 pChange = if (spot <= strike) 5.9 else -4.4,
@@ -465,7 +466,7 @@ class MarketDataRepositoryImpl(
             timestamp = System.currentTimeMillis(),
             highestCallOiStrike = highestCallStrike,
             highestPutOiStrike = highestPutStrike,
-            expiryDates = listOf("07 NOV 2024", "14 NOV 2024", "28 NOV 2024")
+            expiryDates = expiryInfo.allExpiries
         )
     }
 }

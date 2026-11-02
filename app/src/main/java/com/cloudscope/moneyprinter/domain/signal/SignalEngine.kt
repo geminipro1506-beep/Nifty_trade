@@ -130,6 +130,13 @@ object SignalEngine {
 
         val secondaryText = if (summaryParts.isNotEmpty()) summaryParts.joinToString(" | ") else "Technical Confirmation"
         val capitalReq = opt.entryPrice * 25.0 // 1 lot of NIFTY = 25 qty
+        val expiryInfo = com.cloudscope.moneyprinter.domain.options.ExpiryCalculator.calculateUpcomingExpiries(quote.timestamp)
+
+        val invalidation = if (indicators.marketDirection == MarketDirection.BULLISH) {
+            "Invalidated if price breaks below VWAP (₹${String.format("%.1f", indicators.vwap)}) or 9 EMA drops below 20 EMA"
+        } else {
+            "Invalidated if price breaks above VWAP (₹${String.format("%.1f", indicators.vwap)}) or 9 EMA crosses above 20 EMA"
+        }
 
         return TradingSignal(
             action = if (indicators.marketDirection == MarketDirection.BULLISH) SignalAction.BUY_CE else SignalAction.BUY_PE,
@@ -141,6 +148,7 @@ object SignalEngine {
             stopLoss = opt.stopLoss,
             target1 = opt.target1,
             target2 = opt.target2,
+            target3 = opt.target3,
             riskRewardRatio = opt.riskRewardRatio,
             confidencePercent = confidencePercent,
             confidenceRating = confidenceRating,
@@ -150,11 +158,13 @@ object SignalEngine {
             confirmationReasons = reasons,
             strategyType = strategy,
             setupQuality = quality,
-            expiryDate = "Current Weekly (07 NOV)",
+            expiryDate = expiryInfo.currentWeekly,
             lots = 1,
             lotSize = 25,
             capitalRequired = capitalReq,
-            estimatedCharges = 55.0
+            estimatedCharges = 55.0,
+            invalidationConditions = invalidation,
+            premiumAtSignal = opt.entryPrice
         )
     }
 }

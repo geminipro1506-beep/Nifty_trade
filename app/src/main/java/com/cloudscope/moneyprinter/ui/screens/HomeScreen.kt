@@ -135,6 +135,7 @@ fun HomeScreen(
                     TerminalNavTab.DASHBOARD -> DashboardScreen(uiState = uiState, viewModel = viewModel)
                     TerminalNavTab.SIGNALS -> LiveSignalsScreen(uiState = uiState, viewModel = viewModel)
                     TerminalNavTab.OPTION_CHAIN -> OptionChainScreen(uiState = uiState, viewModel = viewModel)
+                    TerminalNavTab.PERFORMANCE -> PerformanceScreen(uiState = uiState, viewModel = viewModel)
                     TerminalNavTab.ANALYSIS -> AnalysisScreen(uiState = uiState, viewModel = viewModel)
                     TerminalNavTab.SETTINGS -> SettingsScreen(uiState = uiState, viewModel = viewModel)
                 }

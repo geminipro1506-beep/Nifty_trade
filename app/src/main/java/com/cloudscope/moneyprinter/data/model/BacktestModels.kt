@@ -13,9 +13,13 @@ data class HistoricalCandle(
 enum class ExitReason {
     TARGET_1,
     TARGET_2,
+    TARGET_3,
     STOP_LOSS,
     SQUARE_OFF_1515,
-    INVALIDATION
+    INVALIDATION,
+    AMBIGUOUS,
+    CANCELLED,
+    EXPIRED_UNFILLED
 }
 
 data class BacktestTrade(
