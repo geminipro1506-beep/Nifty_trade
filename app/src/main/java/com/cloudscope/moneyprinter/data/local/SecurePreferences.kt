@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 import com.cloudscope.moneyprinter.data.model.BrokerCredentials
+import com.cloudscope.moneyprinter.data.model.BrokerType
 
 open class SecurePreferences(private val context: Context) {
 
@@ -25,33 +26,65 @@ open class SecurePreferences(private val context: Context) {
     }
 
     companion object {
-        private const val KEY_API_KEY = "zerodha_api_key"
-        private const val KEY_ACCESS_TOKEN = "zerodha_access_token"
+        private const val KEY_BROKER_TYPE = "broker_type"
+        private const val KEY_API_KEY = "broker_api_key"
+        private const val KEY_ACCESS_TOKEN = "broker_access_token"
+        private const val KEY_CLIENT_ID = "broker_client_id"
         private const val KEY_DARK_THEME = "ui_dark_theme_enabled"
         private const val KEY_AUTO_REFRESH = "auto_refresh_enabled"
     }
 
-    open fun saveCredentials(apiKey: String, accessToken: String) {
+    open fun saveCredentials(
+        apiKey: String,
+        accessToken: String,
+        brokerType: BrokerType = BrokerType.ZERODHA,
+        clientId: String = ""
+    ) {
         prefs.edit()
+            .putString(KEY_BROKER_TYPE, brokerType.name)
             .putString(KEY_API_KEY, apiKey.trim())
             .putString(KEY_ACCESS_TOKEN, accessToken.trim())
+            .putString(KEY_CLIENT_ID, clientId.trim())
             .apply()
     }
 
+    open fun saveBrokerType(brokerType: BrokerType) {
+        prefs.edit().putString(KEY_BROKER_TYPE, brokerType.name).apply()
+    }
+
     open fun getCredentials(): BrokerCredentials {
+        val brokerTypeName = prefs.getString(KEY_BROKER_TYPE, BrokerType.NONE_STANDALONE.name) ?: BrokerType.NONE_STANDALONE.name
+        val brokerType = try {
+            BrokerType.valueOf(brokerTypeName)
+        } catch (e: Exception) {
+            BrokerType.NONE_STANDALONE
+        }
         val apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
         val token = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
+        val clientId = prefs.getString(KEY_CLIENT_ID, "") ?: ""
+
+        val isConfigured = when (brokerType) {
+            BrokerType.NONE_STANDALONE -> false
+            BrokerType.GROWW -> true // Groww is active as execution broker
+            BrokerType.ANGEL_ONE -> apiKey.isNotBlank() || token.isNotBlank()
+            BrokerType.ZERODHA -> apiKey.isNotBlank() && token.isNotBlank()
+        }
+
         return BrokerCredentials(
+            brokerType = brokerType,
             apiKey = apiKey,
             accessToken = token,
-            isConfigured = apiKey.isNotBlank() && token.isNotBlank()
+            clientId = clientId,
+            isConfigured = isConfigured
         )
     }
 
     open fun clearCredentials() {
         prefs.edit()
+            .remove(KEY_BROKER_TYPE)
             .remove(KEY_API_KEY)
             .remove(KEY_ACCESS_TOKEN)
+            .remove(KEY_CLIENT_ID)
             .apply()
     }
 

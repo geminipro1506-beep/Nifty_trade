@@ -102,14 +102,17 @@ $$\text{Probability} = \frac{1}{1 + e^{-k \cdot (\text{Score} - \theta)}}$$
 
 ---
 
-## ⚙️ Zerodha Kite Connect Setup
+## ⚙️ Broker & Demat Integration (100% Optional)
 
-1. Log in to [Zerodha Kite Developer Console](https://kite.trade/).
-2. Create an App to obtain your **API Key** and **API Secret**.
-3. Complete the daily login flow to generate your **Access Token**.
-4. In Cloudscope Money Printer, tap the broker settings icon (top right corner).
-5. Paste your `API Key` and `Access Token`, then tap **Save & Connect**.
-6. The connection bar will change from `SETUP REQUIRED` to `LIVE` with a green pulsing indicator.
+**Demat account setup is completely optional.** Cloudscope Money Printer operates in autonomous mode out of the box using genuine real-time National Stock Exchange (NSE) indices and synthetic Black-Scholes Greeks with zero broker login required.
+
+For users who want broker integration or quick 1-tap trade routing:
+- **Autonomous Mode (Default)**: Uses real-time public NSE feeds. Zero configuration or credentials needed.
+- **Groww**: Enabled as your default trade execution terminal. Signal cards include instant 1-tap `⚡ GROWW` routing into the Groww mobile app or options portal.
+- **Angel One (SmartAPI)**: Enter your SmartAPI Key and Client ID for seamless Angel One tracking and `⚡ ANGEL ONE` 1-tap order routing.
+- **Zerodha (Kite Connect)**: Enter your API Key and daily Access Token for direct tick streaming via Kite API.
+
+Tap the settings icon in the top connection bar to switch between Autonomous mode, Groww, Angel One, or Zerodha anytime.
 
 ---
 

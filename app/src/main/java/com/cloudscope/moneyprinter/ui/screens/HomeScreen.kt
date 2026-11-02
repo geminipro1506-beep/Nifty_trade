@@ -110,51 +110,6 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Credentials setup banner if missing
-            if (uiState.connectionState.status == ConnectionStatus.NEEDS_SETUP) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(colors.card)
-                        .border(1.dp, colors.sideways.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "BROKER SETUP REQUIRED",
-                                color = colors.sideways,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Connect Kite Connect credentials for live NIFTY ticks and option chains.",
-                                color = colors.textSecondary,
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
-                        }
-
-                        Button(
-                            onClick = { viewModel.setConfigDialogVisible(true) },
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = colors.bullish),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("Connect", color = colors.background, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-
             // Priority 1: Top Market Direction + AI Confidence Tile
             MarketSignalTile(
                 quote = uiState.quote,
@@ -196,12 +151,18 @@ fun HomeScreen(
         // Dialogs
         if (uiState.showConfigDialog) {
             ApiConfigDialog(
-                initialApiKey = credentials.apiKey,
-                initialAccessToken = credentials.accessToken,
+                initialCredentials = credentials,
                 onDismiss = { viewModel.setConfigDialogVisible(false) },
-                onSave = { key, token -> viewModel.saveCredentials(key, token) },
+                onSaveCredentials = { key, token, type, clientId ->
+                    viewModel.saveCredentials(key, token, type, clientId)
+                },
+                onSaveBrokerType = { type ->
+                    viewModel.saveBrokerType(type)
+                },
                 onClear = { viewModel.clearCredentials() },
-                onTestConnection = { key, token -> viewModel.testBrokerConnection(key, token) },
+                onTestConnection = { key, token, type ->
+                    viewModel.testBrokerConnection(key, token, type)
+                },
                 testResult = uiState.testConnectionResult
             )
         }

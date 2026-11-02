@@ -10,9 +10,10 @@ interface MarketDataRepository {
     val historicalCandles: StateFlow<List<HistoricalCandle>>
     val latestVix: StateFlow<Double>
 
-    suspend fun refreshMarketData(): Result<Unit>
-    suspend fun testConnection(apiKey: String, accessToken: String): Result<Boolean>
-    fun saveCredentials(apiKey: String, accessToken: String)
+    fun saveCredentials(apiKey: String, accessToken: String, brokerType: BrokerType = BrokerType.ZERODHA, clientId: String = "")
+    fun saveBrokerType(brokerType: BrokerType)
     fun getCredentials(): BrokerCredentials
     fun clearCredentials()
+    suspend fun testConnection(apiKey: String, accessToken: String, brokerType: BrokerType = BrokerType.ZERODHA): Result<Boolean>
+    suspend fun refreshMarketData(): Result<Unit>
 }

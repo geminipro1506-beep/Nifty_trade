@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.cloudscope.moneyprinter.data.model.BrokerType
 import com.cloudscope.moneyprinter.data.model.ConnectionState
 import com.cloudscope.moneyprinter.data.model.ConnectionStatus
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
@@ -39,7 +40,13 @@ fun ConnectionBar(
         ConnectionStatus.LIVE -> Pair("LIVE", colors.bullish)
         ConnectionStatus.DELAYED -> Pair("DELAYED", colors.sideways)
         ConnectionStatus.DATA_UNAVAILABLE -> Pair("DATA UNAVAILABLE", colors.bearish)
-        ConnectionStatus.NEEDS_SETUP -> Pair("SETUP REQUIRED", colors.bearish)
+    }
+
+    val brokerShortName = when (state.brokerType) {
+        BrokerType.NONE_STANDALONE -> "NSE Direct"
+        BrokerType.GROWW -> "Groww Ready"
+        BrokerType.ANGEL_ONE -> "Angel One"
+        BrokerType.ZERODHA -> "Zerodha Kite"
     }
 
     val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
@@ -54,7 +61,7 @@ fun ConnectionBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Status Dot + Status Label + Last Updated
+        // Status Dot + Status Label + Broker Tag + Last Updated
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.clickable { onConfigureClick() }
@@ -78,7 +85,7 @@ fun ConnectionBar(
             )
 
             Text(
-                text = " • $timeText",
+                text = " • $brokerShortName • $timeText",
                 color = colors.textMuted,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace

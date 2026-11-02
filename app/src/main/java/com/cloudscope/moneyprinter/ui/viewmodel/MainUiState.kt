@@ -9,7 +9,7 @@ data class MainUiState(
     val indicators: TechnicalIndicators? = null,
     val optionChain: OptionChain? = null,
     val supportResistance: SupportResistanceLevels? = null,
-    val connectionState: ConnectionState = ConnectionState(ConnectionStatus.NEEDS_SETUP),
+    val connectionState: ConnectionState = ConnectionState(ConnectionStatus.LIVE),
     val backtestResult: BacktestResult? = null,
     val isRefreshing: Boolean = false,
     val showConfigDialog: Boolean = false,

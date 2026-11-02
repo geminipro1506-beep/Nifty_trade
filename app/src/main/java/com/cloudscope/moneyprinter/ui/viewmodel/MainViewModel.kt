@@ -85,21 +85,42 @@ class MainViewModel(
         }
     }
 
-    fun saveCredentials(apiKey: String, accessToken: String) {
-        repository.saveCredentials(apiKey, accessToken)
+    fun saveCredentials(
+        apiKey: String,
+        accessToken: String,
+        brokerType: BrokerType = BrokerType.ZERODHA,
+        clientId: String = ""
+    ) {
+        repository.saveCredentials(apiKey, accessToken, brokerType, clientId)
+        refreshMarketData()
+    }
+
+    fun saveBrokerType(brokerType: BrokerType) {
+        repository.saveBrokerType(brokerType)
         refreshMarketData()
     }
 
     fun clearCredentials() {
         repository.clearCredentials()
+        refreshMarketData()
     }
 
-    fun testBrokerConnection(apiKey: String, accessToken: String) {
+    fun testBrokerConnection(
+        apiKey: String,
+        accessToken: String,
+        brokerType: BrokerType = BrokerType.ZERODHA
+    ) {
         viewModelScope.launch {
-            _uiState.update { it.copy(testConnectionResult = "Testing connection...") }
-            val result = repository.testConnection(apiKey, accessToken)
+            _uiState.update { it.copy(testConnectionResult = "Validating ${brokerType.displayName}...") }
+            val result = repository.testConnection(apiKey, accessToken, brokerType)
             if (result.isSuccess) {
-                _uiState.update { it.copy(testConnectionResult = "Success: Connected to Zerodha Kite Connect!") }
+                val successMsg = when (brokerType) {
+                    BrokerType.NONE_STANDALONE -> "Success: Standalone Mode Active (Zero Broker Setup Required)"
+                    BrokerType.GROWW -> "Success: Groww selected as Execution Broker"
+                    BrokerType.ANGEL_ONE -> "Success: Angel One SmartAPI ready"
+                    BrokerType.ZERODHA -> "Success: Connected to Zerodha Kite Connect"
+                }
+                _uiState.update { it.copy(testConnectionResult = successMsg) }
             } else {
                 val error = result.exceptionOrNull()?.localizedMessage ?: "Connection failed"
                 _uiState.update { it.copy(testConnectionResult = "Failed: $error") }
@@ -120,7 +141,7 @@ class MainViewModel(
         pollingJob = viewModelScope.launch {
             while (isActive) {
                 delay(5000) // 5 second polling interval
-                if (_uiState.value.autoRefreshEnabled && repository.getCredentials().isConfigured) {
+                if (_uiState.value.autoRefreshEnabled) {
                     repository.refreshMarketData()
                 }
             }
