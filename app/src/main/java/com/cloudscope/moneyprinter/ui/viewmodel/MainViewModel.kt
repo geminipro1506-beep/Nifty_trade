@@ -93,6 +93,9 @@ class MainViewModel(
         // Initial fetch
         refreshMarketData()
         refreshAccuracyData()
+        viewModelScope.launch {
+            paperManager?.refreshAccountState()
+        }
     }
 
     fun selectTab(tab: TerminalNavTab) {
@@ -428,6 +431,9 @@ class MainViewModel(
 
                 if (evaluated != signal) {
                     repo.updateSignalLifecycle(evaluated)
+                    if (signal.isPaperTrade) {
+                        paperManager?.refreshAccountState()
+                    }
                 }
             }
         }

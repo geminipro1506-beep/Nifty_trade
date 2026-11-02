@@ -155,7 +155,10 @@ fun PerformanceScreen(
             }
         } else {
             items(signals, key = { it.id }) { record ->
-                HistoricalSignalCard(record = record)
+                HistoricalSignalCard(
+                    record = record,
+                    onClosePaperTrade = { viewModel.closePaperTrade(it) }
+                )
             }
         }
 
@@ -620,7 +623,10 @@ private fun PaperTradingPortfolioCard(
 }
 
 @Composable
-private fun HistoricalSignalCard(record: HistoricalSignalRecord) {
+private fun HistoricalSignalCard(
+    record: HistoricalSignalRecord,
+    onClosePaperTrade: ((HistoricalSignalRecord) -> Unit)? = null
+) {
     val colors = LocalTerminalColors.current
     var isExpanded by remember { mutableStateOf(false) }
 
@@ -730,6 +736,24 @@ private fun HistoricalSignalCard(record: HistoricalSignalRecord) {
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace
                     )
+                }
+            }
+
+            // Quick close button for open paper positions
+            if (record.isPaperTrade && (record.status == SignalLifecycleStatus.ACTIVE || record.status == SignalLifecycleStatus.PENDING_ENTRY) && onClosePaperTrade != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = { onClosePaperTrade(record) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.background),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.warning)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, tint = colors.warning, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("CLOSE PAPER POSITION (MARKET EXIT)", color = colors.warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
