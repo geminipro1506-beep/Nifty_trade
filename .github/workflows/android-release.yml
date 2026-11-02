@@ -51,7 +51,7 @@ jobs:
         run: ./gradlew testReleaseUnitTest --console=plain --stacktrace
 
       - name: Assemble Release APK
-        run: ./gradlew assembleRelease -x lintVitalRelease -x lint -x test --console=plain --stacktrace
+        run: ./gradlew assembleRelease --console=plain --stacktrace
 
       - name: Sign Release APK with Custom Keystore (Optional)
         id: sign_app
