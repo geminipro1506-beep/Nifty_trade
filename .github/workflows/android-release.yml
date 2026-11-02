@@ -1,7 +1,9 @@
-name: Android Release Build & Sign
+name: Android Release Build & Publish
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -30,13 +32,26 @@ jobs:
       - name: Make Gradle Wrapper Executable
         run: chmod +x gradlew
 
+      - name: Determine Version & Release Tag
+        id: release_info
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            NAME="Cloudscope Money Printer $TAG"
+          else
+            TAG="v1.0.${{ github.run_number }}"
+            NAME="Cloudscope Money Printer v1.0.${{ github.run_number }}"
+          fi
+          echo "tag_name=$TAG" >> $GITHUB_OUTPUT
+          echo "release_name=$NAME" >> $GITHUB_OUTPUT
+
       - name: Run Unit Tests
         run: ./gradlew testReleaseUnitTest --console=plain --stacktrace
 
       - name: Assemble Release APK
         run: ./gradlew assembleRelease --console=plain --stacktrace
 
-      - name: Sign Release APK
+      - name: Sign Release APK with Custom Keystore (Optional)
         id: sign_app
         uses: r0adkll/sign-android-release@v1
         if: env.KEYSTORE_BASE64 != ''
@@ -49,28 +64,44 @@ jobs:
           alias: ${{ secrets.KEY_ALIAS }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
 
-      - name: Locate Artifact File
-        id: find_apk
+      - name: Prepare Release APK Artifact
+        id: prep_apk
         run: |
-          if [ -f "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
-            echo "apk_path=${{ steps.sign_app.outputs.signedReleaseFile }}" >> $GITHUB_OUTPUT
+          TAG="${{ steps.release_info.outputs.tag_name }}"
+          if [ -n "${{ steps.sign_app.outputs.signedReleaseFile }}" ] && [ -f "${{ steps.sign_app.outputs.signedReleaseFile }}" ]; then
+            SRC="${{ steps.sign_app.outputs.signedReleaseFile }}"
           else
-            APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
-            echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+            SRC=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
           fi
+          
+          mkdir -p release-artifacts
+          TARGET="release-artifacts/Cloudscope-Money-Printer-${TAG}.apk"
+          cp "$SRC" "$TARGET"
+          echo "apk_path=$TARGET" >> $GITHUB_OUTPUT
+          echo "apk_name=Cloudscope-Money-Printer-${TAG}.apk" >> $GITHUB_OUTPUT
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cloudscope-money-printer-release
-          path: ${{ steps.find_apk.outputs.apk_path }}
-          retention-days: 14
+          name: cloudscope-money-printer-${{ steps.release_info.outputs.tag_name }}
+          path: ${{ steps.prep_apk.outputs.apk_path }}
+          retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Publish GitHub Release with APK
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
         with:
-          files: ${{ steps.find_apk.outputs.apk_path }}
+          tag_name: ${{ steps.release_info.outputs.tag_name }}
+          name: ${{ steps.release_info.outputs.release_name }}
+          files: ${{ steps.prep_apk.outputs.apk_path }}
+          body: |
+            ### Cloudscope Money Printer ⚡
+            Automated production build for NIFTY Intraday Options Intelligence.
+            
+            - **Commit**: `${{ github.sha }}`
+            - **Trigger**: `${{ github.event_name }}` on `${{ github.ref_name }}`
+            - **APK Asset**: `${{ steps.prep_apk.outputs.apk_name }}`
           generate_release_notes: true
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

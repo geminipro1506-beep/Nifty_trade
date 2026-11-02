@@ -128,13 +128,26 @@ Run backtests anytime by tapping the **Backtest** icon in the app header.
 
 ---
 
-## 🚀 Continuous Integration & GitHub Actions
+## 🚀 Continuous Integration & Automated Releases
 
-The repository includes `.github/workflows/android-release.yml` for automated testing and APK signing on tag creation.
+The repository includes [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml) for automated testing, APK building, signing, and immediate GitHub Release creation.
 
-### Required GitHub Repository Secrets
+### Automatic Release on Code Push
+Every push to the `main` branch automatically:
+1. Runs all unit test suites (`./gradlew testReleaseUnitTest`).
+2. Builds the release APK (`./gradlew assembleRelease`).
+3. Signs the APK (with release keystore if configured in secrets, or fallback debug keystore so it installs immediately on any phone).
+4. Creates a new **GitHub Release** (`v1.0.<build_number>`) with release notes and attaches the installable APK file `Cloudscope-Money-Printer-v1.0.<build_number>.apk`.
 
-Configure the following secrets in **Settings > Secrets and variables > Actions**:
+### Manual / Version Tag Releases
+To trigger a tagged production release:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+### Optional: Custom Keystore Secrets
+If you want to sign with your own private production keystore instead of the default key, configure these in **GitHub Settings > Secrets and variables > Actions**:
 
 | Secret Name | Description |
 |---|---|
@@ -142,14 +155,6 @@ Configure the following secrets in **Settings > Secrets and variables > Actions*
 | `KEYSTORE_PASSWORD` | Password for the release keystore |
 | `KEY_ALIAS` | Key alias in the keystore |
 | `KEY_PASSWORD` | Password for the specific key alias |
-
-### Creating a Release Tag
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-GitHub Actions will automatically run all unit tests, build the signed release APK, upload build artifacts, and draft a GitHub Release with release notes and the APK attached.
 
 ---
 
