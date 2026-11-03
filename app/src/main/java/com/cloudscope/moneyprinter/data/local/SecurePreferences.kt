@@ -19,9 +19,13 @@ open class SecurePreferences(private val context: Context) {
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
-        } catch (e: Exception) {
-            // Fallback for environments where Android KeyStore hardware backing is limited
-            context.getSharedPreferences("cs_trading_prefs_fallback", Context.MODE_PRIVATE)
+        } catch (e: Throwable) {
+            // Fallback for environments where Android KeyStore hardware backing is limited or throwing
+            try {
+                context.getSharedPreferences("cs_trading_prefs_fallback", Context.MODE_PRIVATE)
+            } catch (ignored: Throwable) {
+                context.getSharedPreferences("cs_prefs_safe", Context.MODE_PRIVATE)
+            }
         }
     }
 
@@ -40,67 +44,105 @@ open class SecurePreferences(private val context: Context) {
         brokerType: BrokerType = BrokerType.ZERODHA,
         clientId: String = ""
     ) {
-        prefs.edit()
-            .putString(KEY_BROKER_TYPE, brokerType.name)
-            .putString(KEY_API_KEY, apiKey.trim())
-            .putString(KEY_ACCESS_TOKEN, accessToken.trim())
-            .putString(KEY_CLIENT_ID, clientId.trim())
-            .apply()
+        try {
+            prefs.edit()
+                .putString(KEY_BROKER_TYPE, brokerType.name)
+                .putString(KEY_API_KEY, apiKey.trim())
+                .putString(KEY_ACCESS_TOKEN, accessToken.trim())
+                .putString(KEY_CLIENT_ID, clientId.trim())
+                .apply()
+        } catch (e: Throwable) {
+            // Ignore storage failure in restricted environment
+        }
     }
 
     open fun saveBrokerType(brokerType: BrokerType) {
-        prefs.edit().putString(KEY_BROKER_TYPE, brokerType.name).apply()
+        try {
+            prefs.edit().putString(KEY_BROKER_TYPE, brokerType.name).apply()
+        } catch (e: Throwable) {
+            // Ignore
+        }
     }
 
     open fun getCredentials(): BrokerCredentials {
-        val brokerTypeName = prefs.getString(KEY_BROKER_TYPE, BrokerType.NONE_STANDALONE.name) ?: BrokerType.NONE_STANDALONE.name
-        val brokerType = try {
-            BrokerType.valueOf(brokerTypeName)
-        } catch (e: Exception) {
-            BrokerType.NONE_STANDALONE
-        }
-        val apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
-        val token = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
-        val clientId = prefs.getString(KEY_CLIENT_ID, "") ?: ""
+        return try {
+            val brokerTypeName = prefs.getString(KEY_BROKER_TYPE, BrokerType.NONE_STANDALONE.name) ?: BrokerType.NONE_STANDALONE.name
+            val brokerType = try {
+                BrokerType.valueOf(brokerTypeName)
+            } catch (e: Exception) {
+                BrokerType.NONE_STANDALONE
+            }
+            val apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
+            val token = prefs.getString(KEY_ACCESS_TOKEN, "") ?: ""
+            val clientId = prefs.getString(KEY_CLIENT_ID, "") ?: ""
 
-        val isConfigured = when (brokerType) {
-            BrokerType.NONE_STANDALONE -> false
-            BrokerType.GROWW -> true // Groww is active as execution broker
-            BrokerType.ANGEL_ONE -> apiKey.isNotBlank() || token.isNotBlank()
-            BrokerType.ZERODHA -> apiKey.isNotBlank() && token.isNotBlank()
-        }
+            val isConfigured = when (brokerType) {
+                BrokerType.NONE_STANDALONE -> false
+                BrokerType.GROWW -> true // Groww is active as execution broker
+                BrokerType.ANGEL_ONE -> apiKey.isNotBlank() || token.isNotBlank()
+                BrokerType.ZERODHA -> apiKey.isNotBlank() && token.isNotBlank()
+            }
 
-        return BrokerCredentials(
-            brokerType = brokerType,
-            apiKey = apiKey,
-            accessToken = token,
-            clientId = clientId,
-            isConfigured = isConfigured
-        )
+            BrokerCredentials(
+                brokerType = brokerType,
+                apiKey = apiKey,
+                accessToken = token,
+                clientId = clientId,
+                isConfigured = isConfigured
+            )
+        } catch (e: Throwable) {
+            BrokerCredentials(
+                brokerType = BrokerType.NONE_STANDALONE,
+                apiKey = "",
+                accessToken = "",
+                clientId = "",
+                isConfigured = false
+            )
+        }
     }
 
     open fun clearCredentials() {
-        prefs.edit()
-            .remove(KEY_BROKER_TYPE)
-            .remove(KEY_API_KEY)
-            .remove(KEY_ACCESS_TOKEN)
-            .remove(KEY_CLIENT_ID)
-            .apply()
+        try {
+            prefs.edit()
+                .remove(KEY_BROKER_TYPE)
+                .remove(KEY_API_KEY)
+                .remove(KEY_ACCESS_TOKEN)
+                .remove(KEY_CLIENT_ID)
+                .apply()
+        } catch (e: Throwable) {
+            // Ignore
+        }
     }
 
     open fun isDarkThemeEnabled(): Boolean {
-        return prefs.getBoolean(KEY_DARK_THEME, true) // Default to terminal dark theme
+        return try {
+            prefs.getBoolean(KEY_DARK_THEME, true) // Default to terminal dark theme
+        } catch (e: Throwable) {
+            true
+        }
     }
 
     open fun setDarkThemeEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_DARK_THEME, enabled).apply()
+        try {
+            prefs.edit().putBoolean(KEY_DARK_THEME, enabled).apply()
+        } catch (e: Throwable) {
+            // Ignore
+        }
     }
 
     open fun isAutoRefreshEnabled(): Boolean {
-        return prefs.getBoolean(KEY_AUTO_REFRESH, true)
+        return try {
+            prefs.getBoolean(KEY_AUTO_REFRESH, true)
+        } catch (e: Throwable) {
+            true
+        }
     }
 
     open fun setAutoRefreshEnabled(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_AUTO_REFRESH, enabled).apply()
+        try {
+            prefs.edit().putBoolean(KEY_AUTO_REFRESH, enabled).apply()
+        } catch (e: Throwable) {
+            // Ignore
+        }
     }
 }

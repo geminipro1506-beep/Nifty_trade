@@ -26,16 +26,17 @@ object HistoricalLotSizeMigrator {
         val originalNet = record.netPnl
         val originalLotSize = if (record.lotSize > 0) record.lotSize else 25
 
-        return if (record.status == SignalLifecycleStatus.CLOSED && record.actualExitPrice != null && record.entryPrice > 0.0) {
+        val exitPrice = record.actualExitPrice
+        return if (record.status == SignalLifecycleStatus.CLOSED && exitPrice != null && record.entryPrice > 0.0) {
             val (newGross, newNet) = ChargesCalculator.calculateNetPnl(
                 entryPrice = record.entryPrice,
-                exitPrice = record.actualExitPrice!!,
+                exitPrice = exitPrice,
                 lots = currentLots,
                 lotSize = ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE
             )
             val newCharges = ChargesCalculator.calculate(
                 buyPrice = record.entryPrice,
-                sellPrice = record.actualExitPrice!!,
+                sellPrice = exitPrice,
                 lots = currentLots,
                 lotSize = ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE
             ).totalCharges

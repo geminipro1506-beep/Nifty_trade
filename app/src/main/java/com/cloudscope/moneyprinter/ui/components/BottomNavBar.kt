@@ -113,6 +113,7 @@ fun BottomNavBar(
                                 .fillMaxHeight()
                                 .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                 .clip(RoundedCornerShape(8.dp))
+                                .background(animatedBgColor)
                                 .clickable(
                                     interactionSource = interactionSource,
                                     indication = rememberRipple(bounded = true, color = MintEmeraldAccent),

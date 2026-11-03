@@ -144,8 +144,15 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 3) {
-            try {
+        try {
+            if (oldVersion < 2) {
+                // Ensure Phase 3 columns exist safely
+                addColumnIfNotExists(db, COL_AMBIGUOUS_REASON, "TEXT")
+                addColumnIfNotExists(db, COL_CANDLE_RESOLUTION, "TEXT DEFAULT '5m'")
+                addColumnIfNotExists(db, COL_TARGET_SL_SAME_CANDLE, "INTEGER NOT NULL DEFAULT 0")
+                addColumnIfNotExists(db, COL_FINAL_RESOLUTION_STATUS, "TEXT")
+            }
+            if (oldVersion < 3) {
                 // Ensure new Phase 4 columns exist safely
                 addColumnIfNotExists(db, COL_LOTS, "INTEGER NOT NULL DEFAULT 1")
                 addColumnIfNotExists(db, COL_LOT_SIZE, "INTEGER NOT NULL DEFAULT 65")
@@ -157,11 +164,13 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
 
                 // Run historical data migration
                 migrateHistoricalLotSizes(db)
-            } catch (e: Exception) {
-                // In case of any schema conflict, recreate clean table
+            }
+        } catch (e: Throwable) {
+            // In case of any schema conflict, recreate clean table safely
+            try {
                 db.execSQL("DROP TABLE IF EXISTS $TABLE_SIGNALS")
                 onCreate(db)
-            }
+            } catch (ignored: Throwable) {}
         }
     }
 
@@ -202,7 +211,6 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
                 val currentLotSize = if (c.getColumnIndex(COL_LOT_SIZE) != -1 && !c.isNull(c.getColumnIndex(COL_LOT_SIZE))) c.getInt(c.getColumnIndex(COL_LOT_SIZE)) else 25
                 val currentLots = if (c.getColumnIndex(COL_LOTS) != -1 && !c.isNull(c.getColumnIndex(COL_LOTS))) c.getInt(c.getColumnIndex(COL_LOTS)) else 1
                 val statusStr = c.getString(c.getColumnIndexOrThrow(COL_STATUS))
-                val outcomeStr = if (!c.isNull(c.getColumnIndexOrThrow(COL_OUTCOME))) c.getString(c.getColumnIndexOrThrow(COL_OUTCOME)) else null
 
                 if (currentLotSize == 25 || currentLotSize == 0) {
                     val values = ContentValues().apply {
@@ -215,7 +223,6 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
 
                         if (statusStr == SignalLifecycleStatus.CLOSED.name && actualExitPrice != null && entryPrice > 0) {
                             val newQuantity = currentLots * 65
-                            val gross = (actualExitPrice - entryPrice) * newQuantity
                             val (grossRounded, netRounded) = ChargesCalculator.calculateNetPnl(entryPrice, actualExitPrice, currentLots, 65)
                             val charges = ChargesCalculator.calculate(entryPrice, actualExitPrice, currentLots, 65).totalCharges
 
@@ -246,9 +253,8 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         }
     }
 
-    fun insertSignal(record: HistoricalSignalRecord): Long {
-        val db = writableDatabase
-        val values = ContentValues().apply {
+    fun createContentValues(record: HistoricalSignalRecord): ContentValues {
+        return ContentValues().apply {
             put(COL_ID, record.id)
             put(COL_TIMESTAMP, record.timestamp)
             put(COL_SPOT_PRICE, record.spotPrice)
@@ -301,49 +307,74 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
             put(COL_MIGRATION_STATUS, record.migrationStatus)
             put(COL_MIGRATION_NOTES, record.migrationNotes)
         }
+    }
+
+    internal fun insertSignalInternal(db: SQLiteDatabase, record: HistoricalSignalRecord): Long {
+        val values = createContentValues(record)
         return db.insertWithOnConflict(TABLE_SIGNALS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
-    fun updateSignal(record: HistoricalSignalRecord): Int {
-        val db = writableDatabase
-        val values = ContentValues().apply {
-            put(COL_ENTRY_MET, if (record.entryMet) 1 else 0)
-            put(COL_ENTRY_TIMESTAMP, record.entryTimestamp)
-            put(COL_ACTUAL_EXIT_PRICE, record.actualExitPrice)
-            put(COL_EXIT_TIMESTAMP, record.exitTimestamp)
-            put(COL_EXIT_REASON, record.exitReason?.name)
-            put(COL_STATUS, record.status.name)
-            put(COL_OUTCOME, record.outcome?.name)
-            put(COL_GROSS_PNL, record.grossPnl)
-            put(COL_NET_PNL, record.netPnl)
-            put(COL_TOTAL_CHARGES, record.totalCharges)
-            put(COL_HOLDING_TIME, record.holdingTimeMinutes)
-            put(COL_ADJUSTMENTS_LOG, record.adjustmentsLog.joinToString("|||"))
-            put(COL_AMBIGUOUS_REASON, record.ambiguousReason)
-            put(COL_CANDLE_RESOLUTION, record.candleResolution)
-            put(COL_TARGET_SL_SAME_CANDLE, if (record.targetAndSlSameCandle) 1 else 0)
-            put(COL_FINAL_RESOLUTION_STATUS, record.finalResolutionStatus)
-            put(COL_LOTS, record.lots)
-            put(COL_LOT_SIZE, record.lotSize)
-            put(COL_ORIGINAL_GROSS_PNL, record.originalGrossPnl)
-            put(COL_ORIGINAL_NET_PNL, record.originalNetPnl)
-            put(COL_ORIGINAL_LOT_SIZE, record.originalLotSize)
-            put(COL_MIGRATION_STATUS, record.migrationStatus)
-            put(COL_MIGRATION_NOTES, record.migrationNotes)
+    fun insertSignal(record: HistoricalSignalRecord): Long {
+        return try {
+            val db = writableDatabase
+            insertSignalInternal(db, record)
+        } catch (e: Throwable) {
+            -1L
         }
-        return db.update(TABLE_SIGNALS, values, "$COL_ID = ?", arrayOf(record.id))
+    }
+
+    fun updateSignal(record: HistoricalSignalRecord): Int {
+        return try {
+            val db = writableDatabase
+            val values = ContentValues().apply {
+                put(COL_ENTRY_MET, if (record.entryMet) 1 else 0)
+                put(COL_ENTRY_TIMESTAMP, record.entryTimestamp)
+                put(COL_ACTUAL_EXIT_PRICE, record.actualExitPrice)
+                put(COL_EXIT_TIMESTAMP, record.exitTimestamp)
+                put(COL_EXIT_REASON, record.exitReason?.name)
+                put(COL_STATUS, record.status.name)
+                put(COL_OUTCOME, record.outcome?.name)
+                put(COL_GROSS_PNL, record.grossPnl)
+                put(COL_NET_PNL, record.netPnl)
+                put(COL_TOTAL_CHARGES, record.totalCharges)
+                put(COL_HOLDING_TIME, record.holdingTimeMinutes)
+                put(COL_ADJUSTMENTS_LOG, record.adjustmentsLog.joinToString("|||"))
+                put(COL_AMBIGUOUS_REASON, record.ambiguousReason)
+                put(COL_CANDLE_RESOLUTION, record.candleResolution)
+                put(COL_TARGET_SL_SAME_CANDLE, if (record.targetAndSlSameCandle) 1 else 0)
+                put(COL_FINAL_RESOLUTION_STATUS, record.finalResolutionStatus)
+                put(COL_LOTS, record.lots)
+                put(COL_LOT_SIZE, record.lotSize)
+                put(COL_ORIGINAL_GROSS_PNL, record.originalGrossPnl)
+                put(COL_ORIGINAL_NET_PNL, record.originalNetPnl)
+                put(COL_ORIGINAL_LOT_SIZE, record.originalLotSize)
+                put(COL_MIGRATION_STATUS, record.migrationStatus)
+                put(COL_MIGRATION_NOTES, record.migrationNotes)
+            }
+            db.update(TABLE_SIGNALS, values, "$COL_ID = ?", arrayOf(record.id))
+        } catch (e: Throwable) {
+            -1
+        }
     }
 
     fun getAllSignals(): List<HistoricalSignalRecord> {
-        val db = readableDatabase
-        val cursor = db.query(TABLE_SIGNALS, null, null, null, null, null, "$COL_TIMESTAMP DESC")
-        return cursorToList(cursor)
+        return try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_SIGNALS, null, null, null, null, null, "$COL_TIMESTAMP DESC")
+            cursorToList(cursor)
+        } catch (e: Throwable) {
+            emptyList()
+        }
     }
 
     fun getSignalById(id: String): HistoricalSignalRecord? {
-        val db = readableDatabase
-        val cursor = db.query(TABLE_SIGNALS, null, "$COL_ID = ?", arrayOf(id), null, null, null)
-        return cursorToList(cursor).firstOrNull()
+        return try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_SIGNALS, null, "$COL_ID = ?", arrayOf(id), null, null, null)
+            cursorToList(cursor).firstOrNull()
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     fun getSignalsByFilter(
@@ -352,156 +383,199 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         strategyFilter: StrategyFilter = StrategyFilter.ALL,
         paperTradesOnly: Boolean? = null
     ): List<HistoricalSignalRecord> {
-        val db = readableDatabase
-        val selectionClauses = mutableListOf<String>()
-        val selectionArgs = mutableListOf<String>()
+        return try {
+            val db = readableDatabase
+            val selectionClauses = mutableListOf<String>()
+            val selectionArgs = mutableListOf<String>()
 
-        if (fromTimestamp > 0L) {
-            selectionClauses.add("$COL_TIMESTAMP >= ?")
-            selectionArgs.add(fromTimestamp.toString())
+            if (fromTimestamp > 0L) {
+                selectionClauses.add("$COL_TIMESTAMP >= ?")
+                selectionArgs.add(fromTimestamp.toString())
+            }
+
+            if (optionFilter == OptionFilter.CE_ONLY) {
+                selectionClauses.add("$COL_OPTION_TYPE = ?")
+                selectionArgs.add("CE")
+            } else if (optionFilter == OptionFilter.PE_ONLY) {
+                selectionClauses.add("$COL_OPTION_TYPE = ?")
+                selectionArgs.add("PE")
+            }
+
+            if (strategyFilter != StrategyFilter.ALL) {
+                selectionClauses.add("$COL_STRATEGY_TYPE = ?")
+                selectionArgs.add(strategyFilter.name)
+            }
+
+            if (paperTradesOnly != null) {
+                selectionClauses.add("$COL_IS_PAPER_TRADE = ?")
+                selectionArgs.add(if (paperTradesOnly) "1" else "0")
+            }
+
+            val selection = if (selectionClauses.isNotEmpty()) selectionClauses.joinToString(" AND ") else null
+            val args = if (selectionArgs.isNotEmpty()) selectionArgs.toTypedArray() else null
+
+            val cursor = db.query(TABLE_SIGNALS, null, selection, args, null, null, "$COL_TIMESTAMP DESC")
+            cursorToList(cursor)
+        } catch (e: Throwable) {
+            emptyList()
         }
-
-        if (optionFilter == OptionFilter.CE_ONLY) {
-            selectionClauses.add("$COL_OPTION_TYPE = ?")
-            selectionArgs.add("CE")
-        } else if (optionFilter == OptionFilter.PE_ONLY) {
-            selectionClauses.add("$COL_OPTION_TYPE = ?")
-            selectionArgs.add("PE")
-        }
-
-        if (strategyFilter != StrategyFilter.ALL) {
-            selectionClauses.add("$COL_STRATEGY_TYPE = ?")
-            selectionArgs.add(strategyFilter.name)
-        }
-
-        if (paperTradesOnly != null) {
-            selectionClauses.add("$COL_IS_PAPER_TRADE = ?")
-            selectionArgs.add(if (paperTradesOnly) "1" else "0")
-        }
-
-        val selection = if (selectionClauses.isNotEmpty()) selectionClauses.joinToString(" AND ") else null
-        val args = if (selectionArgs.isNotEmpty()) selectionArgs.toTypedArray() else null
-
-        val cursor = db.query(TABLE_SIGNALS, null, selection, args, null, null, "$COL_TIMESTAMP DESC")
-        return cursorToList(cursor)
     }
 
     fun getOpenSignals(): List<HistoricalSignalRecord> {
-        val db = readableDatabase
-        val selection = "$COL_STATUS = ? OR $COL_STATUS = ?"
-        val args = arrayOf(SignalLifecycleStatus.PENDING_ENTRY.name, SignalLifecycleStatus.ACTIVE.name)
-        val cursor = db.query(TABLE_SIGNALS, null, selection, args, null, null, "$COL_TIMESTAMP ASC")
-        return cursorToList(cursor)
+        return try {
+            val db = readableDatabase
+            val selection = "$COL_STATUS = ? OR $COL_STATUS = ?"
+            val args = arrayOf(SignalLifecycleStatus.PENDING_ENTRY.name, SignalLifecycleStatus.ACTIVE.name)
+            val cursor = db.query(TABLE_SIGNALS, null, selection, args, null, null, "$COL_TIMESTAMP ASC")
+            cursorToList(cursor)
+        } catch (e: Throwable) {
+            emptyList()
+        }
     }
 
     private fun cursorToList(cursor: Cursor): List<HistoricalSignalRecord> {
         val list = mutableListOf<HistoricalSignalRecord>()
         cursor.use {
             while (it.moveToNext()) {
-                val reasonsStr = it.getString(it.getColumnIndexOrThrow(COL_REASONS)) ?: ""
-                val reasons = if (reasonsStr.isNotBlank()) reasonsStr.split("|||") else emptyList()
+                try {
+                    val reasonsStr = if (it.getColumnIndex(COL_REASONS) != -1 && !it.isNull(it.getColumnIndex(COL_REASONS))) {
+                        it.getString(it.getColumnIndex(COL_REASONS)) ?: ""
+                    } else ""
+                    val reasons = if (reasonsStr.isNotBlank()) reasonsStr.split("|||") else emptyList()
 
-                val adjLogStr = it.getString(it.getColumnIndexOrThrow(COL_ADJUSTMENTS_LOG)) ?: ""
-                val adjustments = if (adjLogStr.isNotBlank()) adjLogStr.split("|||") else emptyList()
+                    val adjLogStr = if (it.getColumnIndex(COL_ADJUSTMENTS_LOG) != -1 && !it.isNull(it.getColumnIndex(COL_ADJUSTMENTS_LOG))) {
+                        it.getString(it.getColumnIndex(COL_ADJUSTMENTS_LOG)) ?: ""
+                    } else ""
+                    val adjustments = if (adjLogStr.isNotBlank()) adjLogStr.split("|||") else emptyList()
 
-                val exitReasonStr = it.getString(it.getColumnIndexOrThrow(COL_EXIT_REASON))
-                val exitReason = exitReasonStr?.let { r ->
-                    try { ExitReason.valueOf(r) } catch (e: Exception) { null }
-                }
+                    val exitReasonStr = if (it.getColumnIndex(COL_EXIT_REASON) != -1 && !it.isNull(it.getColumnIndex(COL_EXIT_REASON))) {
+                        it.getString(it.getColumnIndex(COL_EXIT_REASON))
+                    } else null
+                    val exitReason = exitReasonStr?.let { r ->
+                        try { ExitReason.valueOf(r) } catch (e: Exception) { null }
+                    }
 
-                val outcomeStr = it.getString(it.getColumnIndexOrThrow(COL_OUTCOME))
-                val outcome = outcomeStr?.let { o ->
-                    try { TradeOutcome.valueOf(o) } catch (e: Exception) { null }
-                }
+                    val outcomeStr = if (it.getColumnIndex(COL_OUTCOME) != -1 && !it.isNull(it.getColumnIndex(COL_OUTCOME))) {
+                        it.getString(it.getColumnIndex(COL_OUTCOME))
+                    } else null
+                    val outcome = outcomeStr?.let { o ->
+                        try { TradeOutcome.valueOf(o) } catch (e: Exception) { null }
+                    }
 
-                val ambiguousReasonIdx = it.getColumnIndex(COL_AMBIGUOUS_REASON)
-                val ambiguousReason = if (ambiguousReasonIdx != -1 && !it.isNull(ambiguousReasonIdx)) it.getString(ambiguousReasonIdx) else null
+                    val ambiguousReasonIdx = it.getColumnIndex(COL_AMBIGUOUS_REASON)
+                    val ambiguousReason = if (ambiguousReasonIdx != -1 && !it.isNull(ambiguousReasonIdx)) it.getString(ambiguousReasonIdx) else null
 
-                val candleResolutionIdx = it.getColumnIndex(COL_CANDLE_RESOLUTION)
-                val candleResolution = if (candleResolutionIdx != -1 && !it.isNull(candleResolutionIdx)) it.getString(candleResolutionIdx) else "5m"
+                    val candleResolutionIdx = it.getColumnIndex(COL_CANDLE_RESOLUTION)
+                    val candleResolution = if (candleResolutionIdx != -1 && !it.isNull(candleResolutionIdx)) it.getString(candleResolutionIdx) else "5m"
 
-                val targetSlIdx = it.getColumnIndex(COL_TARGET_SL_SAME_CANDLE)
-                val targetAndSlSame = if (targetSlIdx != -1) it.getInt(targetSlIdx) == 1 else false
+                    val targetSlIdx = it.getColumnIndex(COL_TARGET_SL_SAME_CANDLE)
+                    val targetAndSlSame = if (targetSlIdx != -1) it.getInt(targetSlIdx) == 1 else false
 
-                val finalResIdx = it.getColumnIndex(COL_FINAL_RESOLUTION_STATUS)
-                val finalResStatus = if (finalResIdx != -1 && !it.isNull(finalResIdx)) it.getString(finalResIdx) else null
+                    val finalResIdx = it.getColumnIndex(COL_FINAL_RESOLUTION_STATUS)
+                    val finalResStatus = if (finalResIdx != -1 && !it.isNull(finalResIdx)) it.getString(finalResIdx) else null
 
-                val lotsIdx = it.getColumnIndex(COL_LOTS)
-                val lots = if (lotsIdx != -1 && !it.isNull(lotsIdx)) it.getInt(lotsIdx) else 1
+                    val lotsIdx = it.getColumnIndex(COL_LOTS)
+                    val lots = if (lotsIdx != -1 && !it.isNull(lotsIdx)) it.getInt(lotsIdx) else 1
 
-                val lotSizeIdx = it.getColumnIndex(COL_LOT_SIZE)
-                val lotSize = if (lotSizeIdx != -1 && !it.isNull(lotSizeIdx)) it.getInt(lotSizeIdx) else 65
+                    val lotSizeIdx = it.getColumnIndex(COL_LOT_SIZE)
+                    val lotSize = if (lotSizeIdx != -1 && !it.isNull(lotSizeIdx)) it.getInt(lotSizeIdx) else 65
 
-                val origGrossIdx = it.getColumnIndex(COL_ORIGINAL_GROSS_PNL)
-                val origGross = if (origGrossIdx != -1 && !it.isNull(origGrossIdx)) it.getDouble(origGrossIdx) else null
+                    val origGrossIdx = it.getColumnIndex(COL_ORIGINAL_GROSS_PNL)
+                    val origGross = if (origGrossIdx != -1 && !it.isNull(origGrossIdx)) it.getDouble(origGrossIdx) else null
 
-                val origNetIdx = it.getColumnIndex(COL_ORIGINAL_NET_PNL)
-                val origNet = if (origNetIdx != -1 && !it.isNull(origNetIdx)) it.getDouble(origNetIdx) else null
+                    val origNetIdx = it.getColumnIndex(COL_ORIGINAL_NET_PNL)
+                    val origNet = if (origNetIdx != -1 && !it.isNull(origNetIdx)) it.getDouble(origNetIdx) else null
 
-                val origLotSizeIdx = it.getColumnIndex(COL_ORIGINAL_LOT_SIZE)
-                val origLotSize = if (origLotSizeIdx != -1 && !it.isNull(origLotSizeIdx)) it.getInt(origLotSizeIdx) else null
+                    val origLotSizeIdx = it.getColumnIndex(COL_ORIGINAL_LOT_SIZE)
+                    val origLotSize = if (origLotSizeIdx != -1 && !it.isNull(origLotSizeIdx)) it.getInt(origLotSizeIdx) else null
 
-                val migStatusIdx = it.getColumnIndex(COL_MIGRATION_STATUS)
-                val migStatus = if (migStatusIdx != -1 && !it.isNull(migStatusIdx)) it.getString(migStatusIdx) else null
+                    val migStatusIdx = it.getColumnIndex(COL_MIGRATION_STATUS)
+                    val migStatus = if (migStatusIdx != -1 && !it.isNull(migStatusIdx)) it.getString(migStatusIdx) else null
 
-                val migNotesIdx = it.getColumnIndex(COL_MIGRATION_NOTES)
-                val migNotes = if (migNotesIdx != -1 && !it.isNull(migNotesIdx)) it.getString(migNotesIdx) else null
+                    val migNotesIdx = it.getColumnIndex(COL_MIGRATION_NOTES)
+                    val migNotes = if (migNotesIdx != -1 && !it.isNull(migNotesIdx)) it.getString(migNotesIdx) else null
 
-                list.add(
-                    HistoricalSignalRecord(
-                        id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
-                        timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
-                        spotPrice = it.getDouble(it.getColumnIndexOrThrow(COL_SPOT_PRICE)),
-                        marketDirection = MarketDirection.valueOf(it.getString(it.getColumnIndexOrThrow(COL_MARKET_DIRECTION))),
-                        action = SignalAction.valueOf(it.getString(it.getColumnIndexOrThrow(COL_ACTION))),
-                        contractSymbol = it.getString(it.getColumnIndexOrThrow(COL_CONTRACT_SYMBOL)),
-                        strikePrice = it.getDouble(it.getColumnIndexOrThrow(COL_STRIKE_PRICE)),
-                        optionType = OptionType.valueOf(it.getString(it.getColumnIndexOrThrow(COL_OPTION_TYPE))),
-                        expiryDate = it.getString(it.getColumnIndexOrThrow(COL_EXPIRY_DATE)),
-                        premiumAtSignal = it.getDouble(it.getColumnIndexOrThrow(COL_PREMIUM_AT_SIGNAL)),
-                        entryPrice = it.getDouble(it.getColumnIndexOrThrow(COL_ENTRY_PRICE)),
-                        stopLoss = it.getDouble(it.getColumnIndexOrThrow(COL_STOP_LOSS)),
-                        target1 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_1)),
-                        target2 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_2)),
-                        target3 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_3)),
-                        confidenceScore = it.getInt(it.getColumnIndexOrThrow(COL_CONFIDENCE_SCORE)),
-                        rsi14 = it.getDouble(it.getColumnIndexOrThrow(COL_RSI14)),
-                        vwap = it.getDouble(it.getColumnIndexOrThrow(COL_VWAP)),
-                        ema9 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA9)),
-                        ema20 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA20)),
-                        ema50 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA50)),
-                        pcr = it.getDouble(it.getColumnIndexOrThrow(COL_PCR)),
-                        vix = it.getDouble(it.getColumnIndexOrThrow(COL_VIX)),
-                        reasons = reasons,
-                        invalidationConditions = it.getString(it.getColumnIndexOrThrow(COL_INVALIDATION)),
-                        entryMet = it.getInt(it.getColumnIndexOrThrow(COL_ENTRY_MET)) == 1,
-                        entryTimestamp = if (it.isNull(it.getColumnIndexOrThrow(COL_ENTRY_TIMESTAMP))) null else it.getLong(it.getColumnIndexOrThrow(COL_ENTRY_TIMESTAMP)),
-                        actualExitPrice = if (it.isNull(it.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE))) null else it.getDouble(it.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE)),
-                        exitTimestamp = if (it.isNull(it.getColumnIndexOrThrow(COL_EXIT_TIMESTAMP))) null else it.getLong(it.getColumnIndexOrThrow(COL_EXIT_TIMESTAMP)),
-                        exitReason = exitReason,
-                        status = SignalLifecycleStatus.valueOf(it.getString(it.getColumnIndexOrThrow(COL_STATUS))),
-                        outcome = outcome,
-                        grossPnl = it.getDouble(it.getColumnIndexOrThrow(COL_GROSS_PNL)),
-                        netPnl = it.getDouble(it.getColumnIndexOrThrow(COL_NET_PNL)),
-                        totalCharges = it.getDouble(it.getColumnIndexOrThrow(COL_TOTAL_CHARGES)),
-                        holdingTimeMinutes = it.getLong(it.getColumnIndexOrThrow(COL_HOLDING_TIME)),
-                        strategyType = StrategyType.valueOf(it.getString(it.getColumnIndexOrThrow(COL_STRATEGY_TYPE))),
-                        timeframe = it.getString(it.getColumnIndexOrThrow(COL_TIMEFRAME)),
-                        isPaperTrade = it.getInt(it.getColumnIndexOrThrow(COL_IS_PAPER_TRADE)) == 1,
-                        adjustmentsLog = adjustments,
-                        ambiguousReason = ambiguousReason,
-                        candleResolution = candleResolution,
-                        targetAndSlSameCandle = targetAndSlSame,
-                        finalResolutionStatus = finalResStatus,
-                        lots = lots,
-                        lotSize = lotSize,
-                        originalGrossPnl = origGross,
-                        originalNetPnl = origNet,
-                        originalLotSize = origLotSize,
-                        migrationStatus = migStatus,
-                        migrationNotes = migNotes
+                    val marketDirStr = it.getString(it.getColumnIndexOrThrow(COL_MARKET_DIRECTION))
+                    val marketDirection = try { MarketDirection.valueOf(marketDirStr) } catch (e: Exception) { MarketDirection.SIDEWAYS }
+
+                    val actionStr = it.getString(it.getColumnIndexOrThrow(COL_ACTION))
+                    val action = try { SignalAction.valueOf(actionStr) } catch (e: Exception) { SignalAction.NO_TRADE }
+
+                    val optTypeStr = it.getString(it.getColumnIndexOrThrow(COL_OPTION_TYPE))
+                    val optionType = try { OptionType.valueOf(optTypeStr) } catch (e: Exception) { OptionType.CE }
+
+                    val statusStr = it.getString(it.getColumnIndexOrThrow(COL_STATUS))
+                    val status = try { SignalLifecycleStatus.valueOf(statusStr) } catch (e: Exception) { SignalLifecycleStatus.CLOSED }
+
+                    val stratTypeStr = it.getString(it.getColumnIndexOrThrow(COL_STRATEGY_TYPE))
+                    val strategyType = try { StrategyType.valueOf(stratTypeStr) } catch (e: Exception) { StrategyType.TREND_FOLLOWING }
+
+                    val invalidation = if (it.getColumnIndex(COL_INVALIDATION) != -1 && !it.isNull(it.getColumnIndex(COL_INVALIDATION))) {
+                        it.getString(it.getColumnIndex(COL_INVALIDATION)) ?: ""
+                    } else ""
+
+                    val timeframe = if (it.getColumnIndex(COL_TIMEFRAME) != -1 && !it.isNull(it.getColumnIndex(COL_TIMEFRAME))) {
+                        it.getString(it.getColumnIndex(COL_TIMEFRAME)) ?: "5m"
+                    } else "5m"
+
+                    list.add(
+                        HistoricalSignalRecord(
+                            id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
+                            timestamp = it.getLong(it.getColumnIndexOrThrow(COL_TIMESTAMP)),
+                            spotPrice = it.getDouble(it.getColumnIndexOrThrow(COL_SPOT_PRICE)),
+                            marketDirection = marketDirection,
+                            action = action,
+                            contractSymbol = it.getString(it.getColumnIndexOrThrow(COL_CONTRACT_SYMBOL)),
+                            strikePrice = it.getDouble(it.getColumnIndexOrThrow(COL_STRIKE_PRICE)),
+                            optionType = optionType,
+                            expiryDate = it.getString(it.getColumnIndexOrThrow(COL_EXPIRY_DATE)),
+                            premiumAtSignal = it.getDouble(it.getColumnIndexOrThrow(COL_PREMIUM_AT_SIGNAL)),
+                            entryPrice = it.getDouble(it.getColumnIndexOrThrow(COL_ENTRY_PRICE)),
+                            stopLoss = it.getDouble(it.getColumnIndexOrThrow(COL_STOP_LOSS)),
+                            target1 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_1)),
+                            target2 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_2)),
+                            target3 = it.getDouble(it.getColumnIndexOrThrow(COL_TARGET_3)),
+                            confidenceScore = it.getInt(it.getColumnIndexOrThrow(COL_CONFIDENCE_SCORE)),
+                            rsi14 = it.getDouble(it.getColumnIndexOrThrow(COL_RSI14)),
+                            vwap = it.getDouble(it.getColumnIndexOrThrow(COL_VWAP)),
+                            ema9 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA9)),
+                            ema20 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA20)),
+                            ema50 = it.getDouble(it.getColumnIndexOrThrow(COL_EMA50)),
+                            pcr = it.getDouble(it.getColumnIndexOrThrow(COL_PCR)),
+                            vix = it.getDouble(it.getColumnIndexOrThrow(COL_VIX)),
+                            reasons = reasons,
+                            invalidationConditions = invalidation,
+                            entryMet = it.getInt(it.getColumnIndexOrThrow(COL_ENTRY_MET)) == 1,
+                            entryTimestamp = if (it.isNull(it.getColumnIndexOrThrow(COL_ENTRY_TIMESTAMP))) null else it.getLong(it.getColumnIndexOrThrow(COL_ENTRY_TIMESTAMP)),
+                            actualExitPrice = if (it.isNull(it.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE))) null else it.getDouble(it.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE)),
+                            exitTimestamp = if (it.isNull(it.getColumnIndexOrThrow(COL_EXIT_TIMESTAMP))) null else it.getLong(it.getColumnIndexOrThrow(COL_EXIT_TIMESTAMP)),
+                            exitReason = exitReason,
+                            status = status,
+                            outcome = outcome,
+                            grossPnl = it.getDouble(it.getColumnIndexOrThrow(COL_GROSS_PNL)),
+                            netPnl = it.getDouble(it.getColumnIndexOrThrow(COL_NET_PNL)),
+                            totalCharges = it.getDouble(it.getColumnIndexOrThrow(COL_TOTAL_CHARGES)),
+                            holdingTimeMinutes = it.getLong(it.getColumnIndexOrThrow(COL_HOLDING_TIME)),
+                            strategyType = strategyType,
+                            timeframe = timeframe,
+                            isPaperTrade = it.getInt(it.getColumnIndexOrThrow(COL_IS_PAPER_TRADE)) == 1,
+                            adjustmentsLog = adjustments,
+                            ambiguousReason = ambiguousReason,
+                            candleResolution = candleResolution,
+                            targetAndSlSameCandle = targetAndSlSame,
+                            finalResolutionStatus = finalResStatus,
+                            lots = lots,
+                            lotSize = lotSize,
+                            originalGrossPnl = origGross,
+                            originalNetPnl = origNet,
+                            originalLotSize = origLotSize,
+                            migrationStatus = migStatus,
+                            migrationNotes = migNotes
+                        )
                     )
-                )
+                } catch (rowEx: Throwable) {
+                    // Skip malformed individual row without failing the rest of the query
+                }
             }
         }
         return list
@@ -681,7 +755,7 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         )
 
         for (sig in sampleSignals) {
-            insertSignal(sig)
+            insertSignalInternal(db, sig)
         }
     }
 

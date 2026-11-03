@@ -50,7 +50,7 @@ object RiskManager {
      * 1. Actual trading capital
      * 2. Maximum acceptable rupee loss
      * 3. Stop-loss distance
-     * 4. Lot size (25)
+     * 4. Authorized contract lot size (65)
      * 5. Charges (Brokerage + STT + Turnover + GST + Stamp)
      * 6. Slippage (0.5pt per leg = 1.0pt roundtrip)
      * 7. Maximum daily risk budget

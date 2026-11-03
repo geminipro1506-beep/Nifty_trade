@@ -37,30 +37,46 @@ class SignalRepositoryImpl(
 
     suspend fun initialize() {
         withContext(Dispatchers.IO) {
-            val list = dbHelper?.getAllSignals() ?: emptyList()
-            _signalsFlow.value = list
+            try {
+                val list = dbHelper?.getAllSignals() ?: emptyList()
+                _signalsFlow.value = list
+            } catch (e: Throwable) {
+                _signalsFlow.value = emptyList()
+            }
         }
     }
 
     override suspend fun recordGeneratedSignal(record: HistoricalSignalRecord): Long {
         return withContext(Dispatchers.IO) {
-            val result = dbHelper?.insertSignal(record) ?: 0L
-            _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
-            result
+            try {
+                val result = dbHelper?.insertSignal(record) ?: 0L
+                _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
+                result
+            } catch (e: Throwable) {
+                0L
+            }
         }
     }
 
     override suspend fun updateSignalLifecycle(record: HistoricalSignalRecord): Int {
         return withContext(Dispatchers.IO) {
-            val result = dbHelper?.updateSignal(record) ?: 0
-            _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
-            result
+            try {
+                val result = dbHelper?.updateSignal(record) ?: 0
+                _signalsFlow.value = dbHelper?.getAllSignals() ?: emptyList()
+                result
+            } catch (e: Throwable) {
+                0
+            }
         }
     }
 
     override suspend fun getAllSignals(): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper?.getAllSignals() ?: emptyList()
+            try {
+                dbHelper?.getAllSignals() ?: emptyList()
+            } catch (e: Throwable) {
+                emptyList()
+            }
         }
     }
 
@@ -71,19 +87,31 @@ class SignalRepositoryImpl(
         paperTradesOnly: Boolean?
     ): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper?.getSignalsByFilter(fromTimestamp, optionFilter, strategyFilter, paperTradesOnly) ?: emptyList()
+            try {
+                dbHelper?.getSignalsByFilter(fromTimestamp, optionFilter, strategyFilter, paperTradesOnly) ?: emptyList()
+            } catch (e: Throwable) {
+                emptyList()
+            }
         }
     }
 
     override suspend fun getOpenSignals(): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
-            dbHelper?.getOpenSignals() ?: emptyList()
+            try {
+                dbHelper?.getOpenSignals() ?: emptyList()
+            } catch (e: Throwable) {
+                emptyList()
+            }
         }
     }
 
     override suspend fun getSignalById(id: String): HistoricalSignalRecord? {
         return withContext(Dispatchers.IO) {
-            dbHelper?.getSignalById(id)
+            try {
+                dbHelper?.getSignalById(id)
+            } catch (e: Throwable) {
+                null
+            }
         }
     }
 

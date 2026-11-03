@@ -20,11 +20,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val securePreferences = SecurePreferences(applicationContext)
-        val repository = MarketDataRepositoryImpl(securePreferences)
-        val dbHelper = SignalDatabaseHelper.getInstance(applicationContext)
-        val signalRepository = SignalRepositoryImpl(dbHelper)
-        viewModel = MainViewModel(repository, securePreferences, signalRepository)
+        try {
+            val securePreferences = SecurePreferences(applicationContext)
+            val repository = MarketDataRepositoryImpl(securePreferences)
+            val dbHelper = SignalDatabaseHelper.getInstance(applicationContext)
+            val signalRepository = SignalRepositoryImpl(dbHelper)
+            viewModel = MainViewModel(repository, securePreferences, signalRepository)
+        } catch (e: Throwable) {
+            android.util.Log.e("MainActivity", "Safe fallback initializing MainViewModel", e)
+            viewModel = MainViewModel()
+        }
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
