@@ -278,7 +278,7 @@ class MainViewModel(
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch {
             while (isActive) {
-                delay(5000) // 5 second polling interval
+                delay(3000) // 3 second polling interval for snappy realtime data
                 if (_uiState.value.autoRefreshEnabled) {
                     repository?.refreshMarketData()
                 }
