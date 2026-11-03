@@ -54,8 +54,8 @@ class PaperTradingManager(
         signal: TradingSignal,
         indicators: TechnicalIndicators
     ): HistoricalSignalRecord? {
-        val lots = 1
-        val lotSize = 25
+        val lots = if (signal.lots > 0) signal.lots else 1
+        val lotSize = if (signal.lotSize > 0) signal.lotSize else com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.getLotSize("NIFTY", signal.expiryDate)
         val slippage = 0.5
         val executedEntryPrice = signal.entryPrice + slippage
         val capitalRequired = executedEntryPrice * lots * lotSize
@@ -71,7 +71,9 @@ class PaperTradingManager(
             entryMet = true,
             entryTimestamp = System.currentTimeMillis(),
             status = SignalLifecycleStatus.ACTIVE,
-            adjustmentsLog = listOf("Paper Trade executed at ₹$executedEntryPrice (incl. 0.5pt slippage)")
+            lots = lots,
+            lotSize = lotSize,
+            adjustmentsLog = listOf("Paper Trade executed at ₹$executedEntryPrice (incl. 0.5pt slippage) with $lots lot(s) = ${lots * lotSize} Qty")
         )
 
         signalRepository.recordGeneratedSignal(paperRecord)
@@ -87,8 +89,8 @@ class PaperTradingManager(
         exitOptionPrice: Double,
         reason: ExitReason
     ): HistoricalSignalRecord {
-        val lots = 1
-        val lotSize = 25
+        val lots = if (record.lots > 0) record.lots else 1
+        val lotSize = if (record.lotSize > 0) record.lotSize else com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.getLotSize("NIFTY", record.expiryDate)
         val slippage = 0.5
         val executedExitPrice = kotlin.math.max(0.05, exitOptionPrice - slippage)
 

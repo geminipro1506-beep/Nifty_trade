@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.ui.components.SignalDetailsModal
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 import com.cloudscope.moneyprinter.ui.viewmodel.MainUiState
 import com.cloudscope.moneyprinter.ui.viewmodel.MainViewModel
@@ -167,6 +168,7 @@ fun PerformanceScreen(
             items(signals, key = { it.id }) { record ->
                 HistoricalSignalCard(
                     record = record,
+                    onSignalClick = { viewModel.selectSignalDetail(record) },
                     onClosePaperTrade = { viewModel.closePaperTrade(it) }
                 )
             }
@@ -893,10 +895,10 @@ private fun PaperTradingPortfolioCard(
 @Composable
 private fun HistoricalSignalCard(
     record: HistoricalSignalRecord,
+    onSignalClick: ((HistoricalSignalRecord) -> Unit)? = null,
     onClosePaperTrade: ((HistoricalSignalRecord) -> Unit)? = null
 ) {
     val colors = LocalTerminalColors.current
-    var isExpanded by remember { mutableStateOf(false) }
 
     val outcomeColor = when (record.outcome) {
         TradeOutcome.WIN -> colors.bullish
@@ -909,16 +911,24 @@ private fun HistoricalSignalCard(
 
     val actionColor = if (record.action == SignalAction.BUY_CE) colors.bullish else colors.bearish
 
+    val netPnlFormatted = try {
+        if (record.netPnl.isNaN() || record.netPnl.isInfinite()) "₹0.00"
+        else if (record.netPnl >= 0) "+₹${String.format(Locale.ENGLISH, "%.2f", record.netPnl)}"
+        else "-₹${String.format(Locale.ENGLISH, "%.2f", kotlin.math.abs(record.netPnl))}"
+    } catch (e: Exception) {
+        "₹${record.netPnl}"
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .clickable { isExpanded = !isExpanded },
+            .clickable { onSignalClick?.invoke(record) },
         colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(10.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            // Row 1: Action + Contract + Outcome Badge
+            // Row 1: Action + Contract + Lot Size + Outcome Badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -944,6 +954,19 @@ private fun HistoricalSignalCard(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = colors.border.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(3.dp)
+                    ) {
+                        Text(
+                            text = "${record.lots}L (${record.totalQuantity}Q)",
+                            color = colors.textSecondary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
                     if (record.isPaperTrade) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Surface(color = colors.warning.copy(alpha = 0.2f), shape = RoundedCornerShape(3.dp)) {
@@ -998,7 +1021,7 @@ private fun HistoricalSignalCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text("Net P&L (post-fees)", color = colors.textSecondary, fontSize = 10.sp)
                     Text(
-                        text = if (record.netPnl >= 0) "+₹${String.format("%.2f", record.netPnl)}" else "-₹${String.format("%.2f", kotlin.math.abs(record.netPnl))}",
+                        text = netPnlFormatted,
                         color = if (record.netPnl >= 0) colors.bullish else colors.bearish,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
@@ -1007,14 +1030,36 @@ private fun HistoricalSignalCard(
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Tap hint indicator
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Tap to view full audit specification",
+                    color = colors.textSecondary.copy(alpha = 0.7f),
+                    fontSize = 10.5.sp
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = colors.textSecondary.copy(alpha = 0.7f),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+
             // Quick close button for open paper positions
             if (record.isPaperTrade && (record.status == SignalLifecycleStatus.ACTIVE || record.status == SignalLifecycleStatus.PENDING_ENTRY) && onClosePaperTrade != null) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = { onClosePaperTrade(record) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(46.dp),
+                        .height(44.dp),
                     shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = colors.background),
                     border = androidx.compose.foundation.BorderStroke(1.dp, colors.warning)
@@ -1022,39 +1067,6 @@ private fun HistoricalSignalCard(
                     Icon(Icons.Default.Close, contentDescription = null, tint = colors.warning, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("CLOSE PAPER POSITION (MARKET EXIT)", color = colors.warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-
-            // Expanded audit trail
-            if (isExpanded) {
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(color = colors.background, thickness = 1.dp)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    AuditLine("Signal ID", record.id)
-                    AuditLine("Timestamp", formatDateTime(record.timestamp))
-                    AuditLine("Spot at Signal", "₹${record.spotPrice}")
-                    AuditLine("Targets & SL", "T1: ₹${record.target1} | T2: ₹${record.target2} | T3: ₹${record.target3} | SL: ₹${record.stopLoss}")
-                    AuditLine("Candle Resolution", record.candleResolution)
-                    AuditLine("Resolution Status", record.finalResolutionStatus ?: record.status.name)
-                    if (record.ambiguousReason != null) {
-                        AuditLine("Ambiguous Detail", record.ambiguousReason)
-                    }
-                    AuditLine("Indicators", "RSI: ${String.format("%.1f", record.rsi14)} | VWAP: ₹${String.format("%.1f", record.vwap)} | PCR: ${record.pcr} | VIX: ${record.vix}")
-                    AuditLine("Confidence", "${record.confidenceScore}%")
-                    AuditLine("Gross P&L", "₹${String.format("%.2f", record.grossPnl)}")
-                    AuditLine("Statutory Friction", "₹${record.totalCharges} (Roundtrip ₹40 + STT + GST + 0.5pt slippage)")
-                    AuditLine("Net Post-Friction", "₹${String.format("%.2f", record.netPnl)}")
-                    AuditLine("Holding Time", "${record.holdingTimeMinutes} min")
-                    AuditLine("Invalidation", record.invalidationConditions)
-                    if (record.adjustmentsLog.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Lifecycle Adjustments Log:", color = colors.textSecondary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        record.adjustmentsLog.forEach { logItem ->
-                            Text("• $logItem", color = colors.textSecondary, fontSize = 10.sp)
-                        }
-                    }
                 }
             }
         }

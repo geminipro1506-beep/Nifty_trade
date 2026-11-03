@@ -102,7 +102,7 @@ data class TradingSignal(
     val setupQuality: String = "A+",
     val expiryDate: String = "Current Weekly",
     val lots: Int = 1,
-    val lotSize: Int = 25,
+    val lotSize: Int = com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE,
     val capitalRequired: Double = 0.0,
     val estimatedCharges: Double = 55.0,
     val waitReason: String? = null,

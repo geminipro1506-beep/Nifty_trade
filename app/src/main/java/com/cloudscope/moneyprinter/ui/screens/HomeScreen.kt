@@ -25,6 +25,7 @@ import com.cloudscope.moneyprinter.ui.components.ApiConfigDialog
 import com.cloudscope.moneyprinter.ui.components.BacktestDialog
 import com.cloudscope.moneyprinter.ui.components.BottomNavBar
 import com.cloudscope.moneyprinter.ui.components.OrderConfirmationDialog
+import com.cloudscope.moneyprinter.ui.components.SignalDetailsDialog
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 import com.cloudscope.moneyprinter.ui.viewmodel.MainViewModel
 import com.cloudscope.moneyprinter.ui.viewmodel.TerminalNavTab
@@ -181,6 +182,24 @@ fun HomeScreen(
                 result = uiState.backtestResult,
                 onDismiss = { viewModel.setBacktestDialogVisible(false) },
                 onRunBacktest = { viewModel.runBacktestSimulation() }
+            )
+        }
+
+        // Historical Signal Audit Trail Details Dialog
+        if (uiState.selectedDetailSignal != null || uiState.isSignalDetailLoading || uiState.signalDetailError != null) {
+            SignalDetailsDialog(
+                record = uiState.selectedDetailSignal,
+                isLoading = uiState.isSignalDetailLoading,
+                errorMessage = uiState.signalDetailError,
+                onDismiss = { viewModel.dismissSignalDetail() },
+                onRetry = {
+                    uiState.selectedDetailSignal?.id?.let { viewModel.retrySignalDetail(it) }
+                        ?: viewModel.dismissSignalDetail()
+                },
+                onClosePaperTrade = {
+                    viewModel.closePaperTrade(it)
+                    viewModel.dismissSignalDetail()
+                }
             )
         }
     }

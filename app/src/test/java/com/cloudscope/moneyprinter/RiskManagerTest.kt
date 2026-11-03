@@ -32,12 +32,13 @@ class RiskManagerTest {
         )
 
         // 2% of ₹1,00,000 = ₹2,000 max risk
-        // Risk per lot = (₹25 SL + 1.0pt slippage) * 25 + charges (~₹52) ≈ ₹702
-        // Allowed lots = floor(2000 / 702) = 2 lots (50 qty)
+        // Authorized NSE lot size = 65
+        // Risk per lot = (₹25 SL + 1.0pt slippage) * 65 + charges (~₹56) ≈ ₹1746
+        // Allowed lots = floor(2000 / 1746) = 1 lot (65 qty)
         val sizing = RiskManager.calculatePositionSize(capital, signal, riskPercent = 2.0)
 
-        assertEquals(2, sizing.lots)
-        assertEquals(50, sizing.totalQuantity)
+        assertEquals(1, sizing.lots)
+        assertEquals(65, sizing.totalQuantity)
         assertTrue(sizing.isApproved)
         assertTrue(sizing.riskPercentOfCapital <= 2.0)
     }

@@ -227,8 +227,9 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.height(14.dp))
 
-                ParameterRow(title = "NIFTY Index Lot Size", value = "25 Shares")
-                ParameterRow(title = "Default Position Sizing", value = "1 Lot (Conservative)")
+                ParameterRow(title = "NIFTY Index Lot Size", value = "65 Qty/Lot (NSE Authorized)")
+                ParameterRow(title = "Contract Specification Source", value = "NSE Master (Eff: Nov 20, 2024)")
+                ParameterRow(title = "Default Position Sizing", value = "1 Lot = 65 Qty (Conservative)")
                 ParameterRow(title = "Mandatory Square-off Guard", value = "15:15 IST (Auto-enforced)")
                 ParameterRow(title = "Minimum Risk/Reward Filter", value = "1 : 1.8")
                 ParameterRow(title = "Confidence Threshold", value = "62% Probability")

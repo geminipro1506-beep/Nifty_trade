@@ -83,8 +83,19 @@ data class HistoricalSignalRecord(
     val ambiguousReason: String? = null,
     val candleResolution: String = "5m",
     val targetAndSlSameCandle: Boolean = false,
-    val finalResolutionStatus: String? = null
-)
+    val finalResolutionStatus: String? = null,
+    // Phase 4 Centralized Lot Size & Historical Migration fields
+    val lots: Int = 1,
+    val lotSize: Int = 65,
+    val originalGrossPnl: Double? = null,
+    val originalNetPnl: Double? = null,
+    val originalLotSize: Int? = null,
+    val migrationStatus: String? = null,
+    val migrationNotes: String? = null
+) {
+    val totalQuantity: Int
+        get() = lots * lotSize
+}
 
 data class AccuracyMetrics(
     val totalSignals: Int,

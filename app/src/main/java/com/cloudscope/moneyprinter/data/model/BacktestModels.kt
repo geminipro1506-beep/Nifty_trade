@@ -33,7 +33,7 @@ data class BacktestTrade(
     val exitPrice: Double,
     val exitReason: ExitReason,
     val lots: Int = 1,
-    val lotSize: Int = 25, // Current NIFTY lot size is 25
+    val lotSize: Int = com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE, // Authorized NSE lot size (65)
     val grossProfit: Double,
     val brokerage: Double,
     val stt: Double,

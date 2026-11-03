@@ -24,6 +24,7 @@ interface SignalRepository {
         paperTradesOnly: Boolean? = null
     ): List<HistoricalSignalRecord>
     suspend fun getOpenSignals(): List<HistoricalSignalRecord>
+    suspend fun getSignalById(id: String): HistoricalSignalRecord?
     fun computeAccuracyMetrics(signals: List<HistoricalSignalRecord>): AccuracyMetrics
 }
 
@@ -77,6 +78,12 @@ class SignalRepositoryImpl(
     override suspend fun getOpenSignals(): List<HistoricalSignalRecord> {
         return withContext(Dispatchers.IO) {
             dbHelper?.getOpenSignals() ?: emptyList()
+        }
+    }
+
+    override suspend fun getSignalById(id: String): HistoricalSignalRecord? {
+        return withContext(Dispatchers.IO) {
+            dbHelper?.getSignalById(id)
         }
     }
 

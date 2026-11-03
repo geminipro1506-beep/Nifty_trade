@@ -6,13 +6,15 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.domain.options.ContractSpecificationService
+import com.cloudscope.moneyprinter.domain.signal.ChargesCalculator
 import java.util.UUID
 
 class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     companion object {
         const val DATABASE_NAME = "cloudscope_signals.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
 
         const val TABLE_SIGNALS = "historical_signals"
 
@@ -60,6 +62,15 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         const val COL_CANDLE_RESOLUTION = "candle_resolution"
         const val COL_TARGET_SL_SAME_CANDLE = "target_sl_same_candle"
         const val COL_FINAL_RESOLUTION_STATUS = "final_resolution_status"
+
+        // Phase 4 Centralized Lot Size & Historical Migration Columns
+        const val COL_LOTS = "lots"
+        const val COL_LOT_SIZE = "lot_size"
+        const val COL_ORIGINAL_GROSS_PNL = "original_gross_pnl"
+        const val COL_ORIGINAL_NET_PNL = "original_net_pnl"
+        const val COL_ORIGINAL_LOT_SIZE = "original_lot_size"
+        const val COL_MIGRATION_STATUS = "migration_status"
+        const val COL_MIGRATION_NOTES = "migration_notes"
 
         @Volatile
         private var INSTANCE: SignalDatabaseHelper? = null
@@ -117,7 +128,14 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
                 $COL_AMBIGUOUS_REASON TEXT,
                 $COL_CANDLE_RESOLUTION TEXT DEFAULT '5m',
                 $COL_TARGET_SL_SAME_CANDLE INTEGER NOT NULL DEFAULT 0,
-                $COL_FINAL_RESOLUTION_STATUS TEXT
+                $COL_FINAL_RESOLUTION_STATUS TEXT,
+                $COL_LOTS INTEGER NOT NULL DEFAULT 1,
+                $COL_LOT_SIZE INTEGER NOT NULL DEFAULT 65,
+                $COL_ORIGINAL_GROSS_PNL REAL,
+                $COL_ORIGINAL_NET_PNL REAL,
+                $COL_ORIGINAL_LOT_SIZE INTEGER,
+                $COL_MIGRATION_STATUS TEXT,
+                $COL_MIGRATION_NOTES TEXT
             )
         """.trimIndent()
         db.execSQL(createTableQuery)
@@ -126,8 +144,106 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_SIGNALS")
-        onCreate(db)
+        if (oldVersion < 3) {
+            try {
+                // Ensure new Phase 4 columns exist safely
+                addColumnIfNotExists(db, COL_LOTS, "INTEGER NOT NULL DEFAULT 1")
+                addColumnIfNotExists(db, COL_LOT_SIZE, "INTEGER NOT NULL DEFAULT 65")
+                addColumnIfNotExists(db, COL_ORIGINAL_GROSS_PNL, "REAL")
+                addColumnIfNotExists(db, COL_ORIGINAL_NET_PNL, "REAL")
+                addColumnIfNotExists(db, COL_ORIGINAL_LOT_SIZE, "INTEGER")
+                addColumnIfNotExists(db, COL_MIGRATION_STATUS, "TEXT")
+                addColumnIfNotExists(db, COL_MIGRATION_NOTES, "TEXT")
+
+                // Run historical data migration
+                migrateHistoricalLotSizes(db)
+            } catch (e: Exception) {
+                // In case of any schema conflict, recreate clean table
+                db.execSQL("DROP TABLE IF EXISTS $TABLE_SIGNALS")
+                onCreate(db)
+            }
+        }
+    }
+
+    private fun addColumnIfNotExists(db: SQLiteDatabase, columnName: String, columnDefinition: String) {
+        val cursor = db.rawQuery("PRAGMA table_info($TABLE_SIGNALS)", null)
+        var exists = false
+        cursor.use {
+            val nameIndex = it.getColumnIndex("name")
+            while (it.moveToNext()) {
+                if (it.getString(nameIndex) == columnName) {
+                    exists = true
+                    break
+                }
+            }
+        }
+        if (!exists) {
+            db.execSQL("ALTER TABLE $TABLE_SIGNALS ADD COLUMN $columnName $columnDefinition")
+        }
+    }
+
+    /**
+     * Historical data migration routine.
+     * Identifies records where lot size was 25 and recalculates them from original entry/exit inputs using lot size 65.
+     * Preserves original audit records in originalGrossPnl and originalNetPnl.
+     * Flags records for manual review if original inputs are unavailable.
+     */
+    fun migrateHistoricalLotSizes(db: SQLiteDatabase) {
+        val cursor = db.query(TABLE_SIGNALS, null, null, null, null, null, null)
+        val recordsToUpdate = mutableListOf<ContentValues>()
+
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(c.getColumnIndexOrThrow(COL_ID))
+                val entryPrice = c.getDouble(c.getColumnIndexOrThrow(COL_ENTRY_PRICE))
+                val actualExitPrice = if (!c.isNull(c.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE))) c.getDouble(c.getColumnIndexOrThrow(COL_ACTUAL_EXIT_PRICE)) else null
+                val oldGross = c.getDouble(c.getColumnIndexOrThrow(COL_GROSS_PNL))
+                val oldNet = c.getDouble(c.getColumnIndexOrThrow(COL_NET_PNL))
+                val currentLotSize = if (c.getColumnIndex(COL_LOT_SIZE) != -1 && !c.isNull(c.getColumnIndex(COL_LOT_SIZE))) c.getInt(c.getColumnIndex(COL_LOT_SIZE)) else 25
+                val currentLots = if (c.getColumnIndex(COL_LOTS) != -1 && !c.isNull(c.getColumnIndex(COL_LOTS))) c.getInt(c.getColumnIndex(COL_LOTS)) else 1
+                val statusStr = c.getString(c.getColumnIndexOrThrow(COL_STATUS))
+                val outcomeStr = if (!c.isNull(c.getColumnIndexOrThrow(COL_OUTCOME))) c.getString(c.getColumnIndexOrThrow(COL_OUTCOME)) else null
+
+                if (currentLotSize == 25 || currentLotSize == 0) {
+                    val values = ContentValues().apply {
+                        put(COL_ID, id)
+                        put(COL_ORIGINAL_LOT_SIZE, 25)
+                        put(COL_ORIGINAL_GROSS_PNL, oldGross)
+                        put(COL_ORIGINAL_NET_PNL, oldNet)
+                        put(COL_LOTS, currentLots)
+                        put(COL_LOT_SIZE, 65)
+
+                        if (statusStr == SignalLifecycleStatus.CLOSED.name && actualExitPrice != null && entryPrice > 0) {
+                            val newQuantity = currentLots * 65
+                            val gross = (actualExitPrice - entryPrice) * newQuantity
+                            val (grossRounded, netRounded) = ChargesCalculator.calculateNetPnl(entryPrice, actualExitPrice, currentLots, 65)
+                            val charges = ChargesCalculator.calculate(entryPrice, actualExitPrice, currentLots, 65).totalCharges
+
+                            put(COL_GROSS_PNL, grossRounded)
+                            put(COL_NET_PNL, netRounded)
+                            put(COL_TOTAL_CHARGES, charges)
+                            put(COL_MIGRATION_STATUS, "MIGRATED_LOT_SIZE_65")
+                            put(COL_MIGRATION_NOTES, "Recalculated with authorized NIFTY lot size 65 (Qty: $newQuantity). Original Gross: ₹$oldGross, Original Net: ₹$oldNet.")
+                        } else if (statusStr == SignalLifecycleStatus.CANCELLED.name || statusStr == SignalLifecycleStatus.EXPIRED.name) {
+                            put(COL_GROSS_PNL, 0.0)
+                            put(COL_NET_PNL, 0.0)
+                            put(COL_TOTAL_CHARGES, 0.0)
+                            put(COL_MIGRATION_STATUS, "MIGRATED_UNFILLED")
+                            put(COL_MIGRATION_NOTES, "Unfilled/Cancelled order updated to authorized specification (65 qty/lot).")
+                        } else {
+                            put(COL_MIGRATION_STATUS, "FLAGGED_MANUAL_REVIEW")
+                            put(COL_MIGRATION_NOTES, "Original execution pricing unavailable. Retained original values for manual audit.")
+                        }
+                    }
+                    recordsToUpdate.add(values)
+                }
+            }
+        }
+
+        for (vals in recordsToUpdate) {
+            val id = vals.getAsString(COL_ID)
+            db.update(TABLE_SIGNALS, vals, "$COL_ID = ?", arrayOf(id))
+        }
     }
 
     fun insertSignal(record: HistoricalSignalRecord): Long {
@@ -177,6 +293,13 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
             put(COL_CANDLE_RESOLUTION, record.candleResolution)
             put(COL_TARGET_SL_SAME_CANDLE, if (record.targetAndSlSameCandle) 1 else 0)
             put(COL_FINAL_RESOLUTION_STATUS, record.finalResolutionStatus)
+            put(COL_LOTS, record.lots)
+            put(COL_LOT_SIZE, record.lotSize)
+            put(COL_ORIGINAL_GROSS_PNL, record.originalGrossPnl)
+            put(COL_ORIGINAL_NET_PNL, record.originalNetPnl)
+            put(COL_ORIGINAL_LOT_SIZE, record.originalLotSize)
+            put(COL_MIGRATION_STATUS, record.migrationStatus)
+            put(COL_MIGRATION_NOTES, record.migrationNotes)
         }
         return db.insertWithOnConflict(TABLE_SIGNALS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -200,6 +323,13 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
             put(COL_CANDLE_RESOLUTION, record.candleResolution)
             put(COL_TARGET_SL_SAME_CANDLE, if (record.targetAndSlSameCandle) 1 else 0)
             put(COL_FINAL_RESOLUTION_STATUS, record.finalResolutionStatus)
+            put(COL_LOTS, record.lots)
+            put(COL_LOT_SIZE, record.lotSize)
+            put(COL_ORIGINAL_GROSS_PNL, record.originalGrossPnl)
+            put(COL_ORIGINAL_NET_PNL, record.originalNetPnl)
+            put(COL_ORIGINAL_LOT_SIZE, record.originalLotSize)
+            put(COL_MIGRATION_STATUS, record.migrationStatus)
+            put(COL_MIGRATION_NOTES, record.migrationNotes)
         }
         return db.update(TABLE_SIGNALS, values, "$COL_ID = ?", arrayOf(record.id))
     }
@@ -208,6 +338,12 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         val db = readableDatabase
         val cursor = db.query(TABLE_SIGNALS, null, null, null, null, null, "$COL_TIMESTAMP DESC")
         return cursorToList(cursor)
+    }
+
+    fun getSignalById(id: String): HistoricalSignalRecord? {
+        val db = readableDatabase
+        val cursor = db.query(TABLE_SIGNALS, null, "$COL_ID = ?", arrayOf(id), null, null, null)
+        return cursorToList(cursor).firstOrNull()
     }
 
     fun getSignalsByFilter(
@@ -290,6 +426,27 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
                 val finalResIdx = it.getColumnIndex(COL_FINAL_RESOLUTION_STATUS)
                 val finalResStatus = if (finalResIdx != -1 && !it.isNull(finalResIdx)) it.getString(finalResIdx) else null
 
+                val lotsIdx = it.getColumnIndex(COL_LOTS)
+                val lots = if (lotsIdx != -1 && !it.isNull(lotsIdx)) it.getInt(lotsIdx) else 1
+
+                val lotSizeIdx = it.getColumnIndex(COL_LOT_SIZE)
+                val lotSize = if (lotSizeIdx != -1 && !it.isNull(lotSizeIdx)) it.getInt(lotSizeIdx) else 65
+
+                val origGrossIdx = it.getColumnIndex(COL_ORIGINAL_GROSS_PNL)
+                val origGross = if (origGrossIdx != -1 && !it.isNull(origGrossIdx)) it.getDouble(origGrossIdx) else null
+
+                val origNetIdx = it.getColumnIndex(COL_ORIGINAL_NET_PNL)
+                val origNet = if (origNetIdx != -1 && !it.isNull(origNetIdx)) it.getDouble(origNetIdx) else null
+
+                val origLotSizeIdx = it.getColumnIndex(COL_ORIGINAL_LOT_SIZE)
+                val origLotSize = if (origLotSizeIdx != -1 && !it.isNull(origLotSizeIdx)) it.getInt(origLotSizeIdx) else null
+
+                val migStatusIdx = it.getColumnIndex(COL_MIGRATION_STATUS)
+                val migStatus = if (migStatusIdx != -1 && !it.isNull(migStatusIdx)) it.getString(migStatusIdx) else null
+
+                val migNotesIdx = it.getColumnIndex(COL_MIGRATION_NOTES)
+                val migNotes = if (migNotesIdx != -1 && !it.isNull(migNotesIdx)) it.getString(migNotesIdx) else null
+
                 list.add(
                     HistoricalSignalRecord(
                         id = it.getString(it.getColumnIndexOrThrow(COL_ID)),
@@ -335,7 +492,14 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
                         ambiguousReason = ambiguousReason,
                         candleResolution = candleResolution,
                         targetAndSlSameCandle = targetAndSlSame,
-                        finalResolutionStatus = finalResStatus
+                        finalResolutionStatus = finalResStatus,
+                        lots = lots,
+                        lotSize = lotSize,
+                        originalGrossPnl = origGross,
+                        originalNetPnl = origNet,
+                        originalLotSize = origLotSize,
+                        migrationStatus = migStatus,
+                        migrationNotes = migNotes
                     )
                 )
             }
@@ -346,232 +510,127 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
     private fun preseedWalkForwardSignals(db: SQLiteDatabase) {
         val now = System.currentTimeMillis()
         val oneDay = 86400000L
+        val lotSize = 65 // Authorized NSE NIFTY Lot Size
 
-        // Generate verified walk-forward signals covering past 30 days
-        // Mathematical reconciliation guarantee: Gross P&L - Charges = Net P&L for every single record
         val sampleSignals = listOf(
-            // 1. Recent winning breakout
-            HistoricalSignalRecord(
+            // 1. Winning Breakout CE
+            createPreseedRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 1),
                 spotPrice = 24860.0,
-                marketDirection = MarketDirection.BULLISH,
+                direction = MarketDirection.BULLISH,
                 action = SignalAction.BUY_CE,
-                contractSymbol = "NIFTY 24850 CE",
-                strikePrice = 24850.0,
-                optionType = OptionType.CE,
-                expiryDate = "Current Weekly",
-                premiumAtSignal = 138.0,
+                symbol = "NIFTY 24850 CE",
+                strike = 24850.0,
+                optType = OptionType.CE,
                 entryPrice = 140.0,
-                stopLoss = 112.0,
-                target1 = 182.0,
-                target2 = 196.0,
-                target3 = 224.0,
-                confidenceScore = 78,
-                rsi14 = 62.5,
-                vwap = 24835.0,
-                ema9 = 24865.0,
-                ema20 = 24840.0,
-                ema50 = 24810.0,
-                pcr = 1.22,
-                vix = 14.1,
-                reasons = listOf("Price above VWAP", "9 EMA > 20 EMA Golden Cross", "PCR 1.22 Put Writing Support"),
-                invalidationConditions = "Price drops below VWAP",
-                entryMet = true,
-                entryTimestamp = now - (oneDay * 1) + 600000L,
-                actualExitPrice = 182.0,
-                exitTimestamp = now - (oneDay * 1) + 2400000L,
+                exitPrice = 182.0,
+                sl = 112.0,
+                t1 = 182.0, t2 = 196.0, t3 = 224.0,
                 exitReason = ExitReason.TARGET_1,
-                status = SignalLifecycleStatus.CLOSED,
                 outcome = TradeOutcome.WIN,
-                grossPnl = (182.0 - 140.0) * 25, // +1050.0
-                netPnl = (182.0 - 140.0) * 25 - 55.0, // +995.0
-                totalCharges = 55.0,
-                holdingTimeMinutes = 30,
-                strategyType = StrategyType.BREAKOUT,
-                timeframe = "5m",
-                candleResolution = "5m",
-                targetAndSlSameCandle = false,
-                finalResolutionStatus = "RESOLVED_TARGET_1"
+                holdingMin = 30,
+                strategy = StrategyType.BREAKOUT,
+                confidence = 78,
+                vix = 14.1,
+                lotSize = lotSize,
+                notes = "Preseeded authorized walk-forward record."
             ),
-            // 2. Winning trend following
-            HistoricalSignalRecord(
+            // 2. Winning Trend Following PE
+            createPreseedRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 2),
                 spotPrice = 24720.0,
-                marketDirection = MarketDirection.BEARISH,
+                direction = MarketDirection.BEARISH,
                 action = SignalAction.BUY_PE,
-                contractSymbol = "NIFTY 24700 PE",
-                strikePrice = 24700.0,
-                optionType = OptionType.PE,
-                expiryDate = "Current Weekly",
-                premiumAtSignal = 125.0,
+                symbol = "NIFTY 24700 PE",
+                strike = 24700.0,
+                optType = OptionType.PE,
                 entryPrice = 128.0,
-                stopLoss = 102.0,
-                target1 = 167.0,
-                target2 = 180.0,
-                target3 = 206.0,
-                confidenceScore = 82,
-                rsi14 = 38.0,
-                vwap = 24750.0,
-                ema9 = 24715.0,
-                ema20 = 24735.0,
-                ema50 = 24765.0,
-                pcr = 0.82,
-                vix = 15.6,
-                reasons = listOf("Price below VWAP", "Death cross 9 < 20 EMA", "Call writing at 24800"),
-                invalidationConditions = "Price reclaims VWAP",
-                entryMet = true,
-                entryTimestamp = now - (oneDay * 2) + 300000L,
-                actualExitPrice = 180.0,
-                exitTimestamp = now - (oneDay * 2) + 3600000L,
+                exitPrice = 180.0,
+                sl = 102.0,
+                t1 = 167.0, t2 = 180.0, t3 = 206.0,
                 exitReason = ExitReason.TARGET_2,
-                status = SignalLifecycleStatus.CLOSED,
                 outcome = TradeOutcome.WIN,
-                grossPnl = (180.0 - 128.0) * 25, // +1300.0
-                netPnl = (180.0 - 128.0) * 25 - 58.0, // +1242.0
-                totalCharges = 58.0,
-                holdingTimeMinutes = 55,
-                strategyType = StrategyType.TREND_FOLLOWING,
-                timeframe = "5m",
-                candleResolution = "5m",
-                targetAndSlSameCandle = false,
-                finalResolutionStatus = "RESOLVED_TARGET_2"
+                holdingMin = 55,
+                strategy = StrategyType.TREND_FOLLOWING,
+                confidence = 82,
+                vix = 15.6,
+                lotSize = lotSize,
+                notes = "Preseeded authorized walk-forward record."
             ),
-            // 3. Controlled loss (Stop Loss hit)
-            HistoricalSignalRecord(
+            // 3. Controlled Loss (Stop Loss CE)
+            createPreseedRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 3),
                 spotPrice = 24900.0,
-                marketDirection = MarketDirection.BULLISH,
+                direction = MarketDirection.BULLISH,
                 action = SignalAction.BUY_CE,
-                contractSymbol = "NIFTY 24900 CE",
-                strikePrice = 24900.0,
-                optionType = OptionType.CE,
-                expiryDate = "Current Weekly",
-                premiumAtSignal = 145.0,
+                symbol = "NIFTY 24900 CE",
+                strike = 24900.0,
+                optType = OptionType.CE,
                 entryPrice = 148.0,
-                stopLoss = 118.0,
-                target1 = 193.0,
-                target2 = 208.0,
-                target3 = 238.0,
-                confidenceScore = 68,
-                rsi14 = 55.0,
-                vwap = 24885.0,
-                ema9 = 24905.0,
-                ema20 = 24890.0,
-                ema50 = 24870.0,
-                pcr = 1.08,
-                vix = 14.8,
-                reasons = listOf("VWAP Support", "EMA golden alignment"),
-                invalidationConditions = "Price drops below VWAP",
-                entryMet = true,
-                entryTimestamp = now - (oneDay * 3) + 400000L,
-                actualExitPrice = 118.0,
-                exitTimestamp = now - (oneDay * 3) + 1800000L,
+                exitPrice = 118.0,
+                sl = 118.0,
+                t1 = 193.0, t2 = 208.0, t3 = 238.0,
                 exitReason = ExitReason.STOP_LOSS,
-                status = SignalLifecycleStatus.CLOSED,
                 outcome = TradeOutcome.LOSS,
-                grossPnl = (118.0 - 148.0) * 25, // -750.0
-                netPnl = (118.0 - 148.0) * 25 - 52.0, // -802.0
-                totalCharges = 52.0,
-                holdingTimeMinutes = 23,
-                strategyType = StrategyType.TREND_FOLLOWING,
-                timeframe = "5m",
-                candleResolution = "5m",
-                targetAndSlSameCandle = false,
-                finalResolutionStatus = "RESOLVED_STOP_LOSS"
+                holdingMin = 23,
+                strategy = StrategyType.TREND_FOLLOWING,
+                confidence = 68,
+                vix = 14.8,
+                lotSize = lotSize,
+                notes = "Preseeded authorized walk-forward record."
             ),
-            // 4. Ambiguous candle outcome (both T1 and SL touched in same 5m spike without sub-candle sequence separation)
-            HistoricalSignalRecord(
+            // 4. Ambiguous candle outcome (both T1 and SL touched in same window)
+            createPreseedRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 4),
                 spotPrice = 24800.0,
-                marketDirection = MarketDirection.BULLISH,
+                direction = MarketDirection.BULLISH,
                 action = SignalAction.BUY_CE,
-                contractSymbol = "NIFTY 24800 CE",
-                strikePrice = 24800.0,
-                optionType = OptionType.CE,
-                expiryDate = "Current Weekly",
-                premiumAtSignal = 135.0,
+                symbol = "NIFTY 24800 CE",
+                strike = 24800.0,
+                optType = OptionType.CE,
                 entryPrice = 138.0,
-                stopLoss = 110.0,
-                target1 = 180.0,
-                target2 = 194.0,
-                target3 = 222.0,
-                confidenceScore = 65,
-                rsi14 = 56.0,
-                vwap = 24785.0,
-                ema9 = 24805.0,
-                ema20 = 24790.0,
-                ema50 = 24770.0,
-                pcr = 1.06,
-                vix = 18.2,
-                reasons = listOf("ORB 15m breakout attempt"),
-                invalidationConditions = "Low of breakout candle broken",
-                entryMet = true,
-                entryTimestamp = now - (oneDay * 4) + 600000L,
-                actualExitPrice = 138.0,
-                exitTimestamp = now - (oneDay * 4) + 1200000L,
+                exitPrice = 138.0, // Breakeven exit at entry
+                sl = 110.0,
+                t1 = 180.0, t2 = 194.0, t3 = 222.0,
                 exitReason = ExitReason.AMBIGUOUS,
-                status = SignalLifecycleStatus.CLOSED,
                 outcome = TradeOutcome.AMBIGUOUS,
-                grossPnl = 0.0,
-                netPnl = -45.0, // Gross 0.0 - Charges 45.0 = -45.0
-                totalCharges = 45.0,
-                holdingTimeMinutes = 10,
-                strategyType = StrategyType.BREAKOUT,
-                timeframe = "5m",
-                ambiguousReason = "Target 1 (₹180.0) and SL (₹110.0) hit in same 5m candle [H: ₹182.0, L: ₹108.0] without sub-candle sequence separation. Excluded from win rate denominator.",
-                candleResolution = "5m",
-                targetAndSlSameCandle = true,
-                finalResolutionStatus = "AMBIGUOUS_UNRESOLVED_EXCLUDED_FROM_WIN_RATE"
+                holdingMin = 10,
+                strategy = StrategyType.BREAKOUT,
+                confidence = 65,
+                vix = 18.2,
+                lotSize = lotSize,
+                ambiguousReason = "Target 1 (₹180.0) and SL (₹110.0) hit in same 5m candle [H: ₹182.0, L: ₹108.0]. Excluded from win rate denominator.",
+                isAmbiguous = true,
+                notes = "Preseeded authorized walk-forward record."
             ),
-            // 5. Reversal Winning Trade
-            HistoricalSignalRecord(
+            // 5. Reversal Winning Trade CE
+            createPreseedRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 5),
                 spotPrice = 24650.0,
-                marketDirection = MarketDirection.BULLISH,
+                direction = MarketDirection.BULLISH,
                 action = SignalAction.BUY_CE,
-                contractSymbol = "NIFTY 24650 CE",
-                strikePrice = 24650.0,
-                optionType = OptionType.CE,
-                expiryDate = "Current Weekly",
-                premiumAtSignal = 110.0,
+                symbol = "NIFTY 24650 CE",
+                strike = 24650.0,
+                optType = OptionType.CE,
                 entryPrice = 112.0,
-                stopLoss = 90.0,
-                target1 = 145.0,
-                target2 = 156.0,
-                target3 = 178.0,
-                confidenceScore = 75,
-                rsi14 = 32.0,
-                vwap = 24680.0,
-                ema9 = 24655.0,
-                ema20 = 24670.0,
-                ema50 = 24700.0,
-                pcr = 1.18,
-                vix = 14.2,
-                reasons = listOf("RSI oversold rebound from S2 support", "Put writing surge"),
-                invalidationConditions = "New intraday low made",
-                entryMet = true,
-                entryTimestamp = now - (oneDay * 5) + 300000L,
-                actualExitPrice = 178.0,
-                exitTimestamp = now - (oneDay * 5) + 5400000L,
+                exitPrice = 178.0,
+                sl = 90.0,
+                t1 = 145.0, t2 = 156.0, t3 = 178.0,
                 exitReason = ExitReason.TARGET_3,
-                status = SignalLifecycleStatus.CLOSED,
                 outcome = TradeOutcome.WIN,
-                grossPnl = (178.0 - 112.0) * 25, // +1650.0
-                netPnl = (178.0 - 112.0) * 25 - 62.0, // +1588.0
-                totalCharges = 62.0,
-                holdingTimeMinutes = 85,
-                strategyType = StrategyType.REVERSAL,
-                timeframe = "5m",
-                candleResolution = "5m",
-                targetAndSlSameCandle = false,
-                finalResolutionStatus = "RESOLVED_TARGET_3"
+                holdingMin = 85,
+                strategy = StrategyType.REVERSAL,
+                confidence = 75,
+                vix = 14.2,
+                lotSize = lotSize,
+                notes = "Preseeded authorized walk-forward record."
             ),
-            // 6. Cancelled signal before entry
+            // 6. Cancelled before entry
             HistoricalSignalRecord(
                 id = UUID.randomUUID().toString(),
                 timestamp = now - (oneDay * 6),
@@ -613,58 +672,96 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
                 timeframe = "5m",
                 candleResolution = "5m",
                 targetAndSlSameCandle = false,
-                finalResolutionStatus = "CANCELLED_BEFORE_ENTRY"
+                finalResolutionStatus = "CANCELLED_BEFORE_ENTRY",
+                lots = 1,
+                lotSize = lotSize,
+                migrationStatus = "NSE_AUTHORIZED_LOT_SIZE_65",
+                migrationNotes = "Preseeded authorized specification."
             )
         )
 
         for (sig in sampleSignals) {
-            val values = ContentValues().apply {
-                put(COL_ID, sig.id)
-                put(COL_TIMESTAMP, sig.timestamp)
-                put(COL_SPOT_PRICE, sig.spotPrice)
-                put(COL_MARKET_DIRECTION, sig.marketDirection.name)
-                put(COL_ACTION, sig.action.name)
-                put(COL_CONTRACT_SYMBOL, sig.contractSymbol)
-                put(COL_STRIKE_PRICE, sig.strikePrice)
-                put(COL_OPTION_TYPE, sig.optionType.name)
-                put(COL_EXPIRY_DATE, sig.expiryDate)
-                put(COL_PREMIUM_AT_SIGNAL, sig.premiumAtSignal)
-                put(COL_ENTRY_PRICE, sig.entryPrice)
-                put(COL_STOP_LOSS, sig.stopLoss)
-                put(COL_TARGET_1, sig.target1)
-                put(COL_TARGET_2, sig.target2)
-                put(COL_TARGET_3, sig.target3)
-                put(COL_CONFIDENCE_SCORE, sig.confidenceScore)
-                put(COL_RSI14, sig.rsi14)
-                put(COL_VWAP, sig.vwap)
-                put(COL_EMA9, sig.ema9)
-                put(COL_EMA20, sig.ema20)
-                put(COL_EMA50, sig.ema50)
-                put(COL_PCR, sig.pcr)
-                put(COL_VIX, sig.vix)
-                put(COL_REASONS, sig.reasons.joinToString("|||"))
-                put(COL_INVALIDATION, sig.invalidationConditions)
-                put(COL_ENTRY_MET, if (sig.entryMet) 1 else 0)
-                put(COL_ENTRY_TIMESTAMP, sig.entryTimestamp)
-                put(COL_ACTUAL_EXIT_PRICE, sig.actualExitPrice)
-                put(COL_EXIT_TIMESTAMP, sig.exitTimestamp)
-                put(COL_EXIT_REASON, sig.exitReason?.name)
-                put(COL_STATUS, sig.status.name)
-                put(COL_OUTCOME, sig.outcome?.name)
-                put(COL_GROSS_PNL, sig.grossPnl)
-                put(COL_NET_PNL, sig.netPnl)
-                put(COL_TOTAL_CHARGES, sig.totalCharges)
-                put(COL_HOLDING_TIME, sig.holdingTimeMinutes)
-                put(COL_STRATEGY_TYPE, sig.strategyType.name)
-                put(COL_TIMEFRAME, sig.timeframe)
-                put(COL_IS_PAPER_TRADE, if (sig.isPaperTrade) 1 else 0)
-                put(COL_ADJUSTMENTS_LOG, sig.adjustmentsLog.joinToString("|||"))
-                put(COL_AMBIGUOUS_REASON, sig.ambiguousReason)
-                put(COL_CANDLE_RESOLUTION, sig.candleResolution)
-                put(COL_TARGET_SL_SAME_CANDLE, if (sig.targetAndSlSameCandle) 1 else 0)
-                put(COL_FINAL_RESOLUTION_STATUS, sig.finalResolutionStatus)
-            }
-            db.insert(TABLE_SIGNALS, null, values)
+            insertSignal(sig)
         }
+    }
+
+    private fun createPreseedRecord(
+        id: String,
+        timestamp: Long,
+        spotPrice: Double,
+        direction: MarketDirection,
+        action: SignalAction,
+        symbol: String,
+        strike: Double,
+        optType: OptionType,
+        entryPrice: Double,
+        exitPrice: Double,
+        sl: Double,
+        t1: Double,
+        t2: Double,
+        t3: Double,
+        exitReason: ExitReason,
+        outcome: TradeOutcome,
+        holdingMin: Long,
+        strategy: StrategyType,
+        confidence: Int,
+        vix: Double,
+        lotSize: Int = 65,
+        ambiguousReason: String? = null,
+        isAmbiguous: Boolean = false,
+        notes: String = ""
+    ): HistoricalSignalRecord {
+        val lots = 1
+        val (gross, net) = ChargesCalculator.calculateNetPnl(entryPrice, exitPrice, lots, lotSize)
+        val charges = ChargesCalculator.calculate(entryPrice, exitPrice, lots, lotSize).totalCharges
+
+        return HistoricalSignalRecord(
+            id = id,
+            timestamp = timestamp,
+            spotPrice = spotPrice,
+            marketDirection = direction,
+            action = action,
+            contractSymbol = symbol,
+            strikePrice = strike,
+            optionType = optType,
+            expiryDate = "Current Weekly",
+            premiumAtSignal = entryPrice,
+            entryPrice = entryPrice,
+            stopLoss = sl,
+            target1 = t1,
+            target2 = t2,
+            target3 = t3,
+            confidenceScore = confidence,
+            rsi14 = 55.0,
+            vwap = spotPrice - 15.0,
+            ema9 = spotPrice + 5.0,
+            ema20 = spotPrice - 5.0,
+            ema50 = spotPrice - 25.0,
+            pcr = 1.15,
+            vix = vix,
+            reasons = listOf("Quantitative algorithm execution"),
+            invalidationConditions = "Opposite momentum reversal",
+            entryMet = true,
+            entryTimestamp = timestamp + 300000L,
+            actualExitPrice = exitPrice,
+            exitTimestamp = timestamp + (holdingMin * 60000L),
+            exitReason = exitReason,
+            status = SignalLifecycleStatus.CLOSED,
+            outcome = outcome,
+            grossPnl = gross,
+            netPnl = net,
+            totalCharges = charges,
+            holdingTimeMinutes = holdingMin,
+            strategyType = strategy,
+            timeframe = "5m",
+            candleResolution = "5m",
+            targetAndSlSameCandle = isAmbiguous,
+            ambiguousReason = ambiguousReason,
+            finalResolutionStatus = if (isAmbiguous) "AMBIGUOUS_UNRESOLVED_EXCLUDED_FROM_WIN_RATE" else "RESOLVED_${exitReason.name}",
+            lots = lots,
+            lotSize = lotSize,
+            migrationStatus = "NSE_AUTHORIZED_LOT_SIZE_65",
+            migrationNotes = notes
+        )
     }
 }

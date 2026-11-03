@@ -1,5 +1,6 @@
 package com.cloudscope.moneyprinter.domain.signal
 
+import com.cloudscope.moneyprinter.domain.options.ContractSpecificationService
 import kotlin.math.abs
 
 data class TradeCharges(
@@ -17,6 +18,7 @@ object ChargesCalculator {
     /**
      * Calculates realistic statutory charges and execution slippage for Indian NIFTY Options.
      * Standard institutional rules:
+     * - Lot Size: Centralized ContractSpecificationService (Current: 65)
      * - Brokerage: ₹20 per executed order (₹40 round-trip)
      * - STT: 0.1% on sell turnover (premium * quantity)
      * - Exchange turnover fee: 0.05% on total turnover (buy + sell)
@@ -28,7 +30,7 @@ object ChargesCalculator {
         buyPrice: Double,
         sellPrice: Double,
         lots: Int = 1,
-        lotSize: Int = 25,
+        lotSize: Int = ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE,
         brokeragePerOrder: Double = 20.0,
         sttPercentOnSell: Double = 0.1,
         exchangeTurnoverPercent: Double = 0.05,
@@ -62,12 +64,14 @@ object ChargesCalculator {
 
     /**
      * Calculates gross and net P&L after friction
+     * Gross P&L = (Exit Premium - Entry Premium) * Lot Size * Number of Lots.
+     * Net P&L = Gross P&L - Actual applicable transaction charges.
      */
     fun calculateNetPnl(
         entryPrice: Double,
         exitPrice: Double,
         lots: Int = 1,
-        lotSize: Int = 25
+        lotSize: Int = ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE
     ): Pair<Double, Double> {
         val qty = lots * lotSize
         val grossPnl = (exitPrice - entryPrice) * qty

@@ -60,4 +60,37 @@ class ChargesCalculatorTest {
         // Net loss should be worse than gross loss due to friction
         assertTrue(net < gross)
     }
+
+    @Test
+    fun testAuthorizedLotSize65Calculations() {
+        // 1 Lot = 65 Qty
+        val (gross1, _) = ChargesCalculator.calculateNetPnl(100.0, 110.0, lots = 1, lotSize = 65)
+        assertEquals(650.0, gross1, 0.01)
+
+        // 2 Lots = 130 Qty
+        val (gross2, _) = ChargesCalculator.calculateNetPnl(100.0, 110.0, lots = 2, lotSize = 65)
+        assertEquals(1300.0, gross2, 0.01)
+
+        // 3 Lots = 195 Qty
+        val (gross3, _) = ChargesCalculator.calculateNetPnl(100.0, 110.0, lots = 3, lotSize = 65)
+        assertEquals(1950.0, gross3, 0.01)
+
+        // 5 Lots = 325 Qty
+        val (gross5, _) = ChargesCalculator.calculateNetPnl(100.0, 110.0, lots = 5, lotSize = 65)
+        assertEquals(3250.0, gross5, 0.01)
+    }
+
+    @Test
+    fun testDefaultLotSizeUsesAuthorized65() {
+        val charges = ChargesCalculator.calculate(
+            buyPrice = 100.0,
+            sellPrice = 120.0,
+            lots = 1
+        )
+        // Default lot size should be 65, so turnover is buy: 6500, sell: 7800
+        // STT = 7800 * 0.001 = 7.8
+        assertEquals(7.8, charges.stt, 0.01)
+        // Slippage = 0.5 * 65 * 2 = 65.0
+        assertEquals(65.0, charges.slippageCost, 0.01)
+    }
 }

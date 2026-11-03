@@ -112,9 +112,9 @@ class SignalOutcomeTrackerTest {
         assertEquals(TradeOutcome.WIN, updated.outcome)
         assertEquals(ExitReason.TARGET_3, updated.exitReason)
         assertEquals(210.0, updated.actualExitPrice!!, 0.01)
-        // Gross PnL: (210 - 120) * 25 = 2250
-        assertEquals(2250.0, updated.grossPnl, 0.01)
-        assertTrue(updated.netPnl > 2100.0)
+        // Gross PnL: (210 - 120) * 65 = 5850.0 (Authorized lot size 65)
+        assertEquals(5850.0, updated.grossPnl, 0.01)
+        assertTrue(updated.netPnl > 5600.0)
     }
 
     @Test
@@ -137,9 +137,9 @@ class SignalOutcomeTrackerTest {
         assertEquals(TradeOutcome.LOSS, updated.outcome)
         assertEquals(ExitReason.STOP_LOSS, updated.exitReason)
         assertEquals(90.0, updated.actualExitPrice!!, 0.01)
-        // Gross PnL: (90 - 120) * 25 = -750
-        assertEquals(-750.0, updated.grossPnl, 0.01)
-        assertTrue(updated.netPnl < -750.0)
+        // Gross PnL: (90 - 120) * 65 = -1950.0 (Authorized lot size 65)
+        assertEquals(-1950.0, updated.grossPnl, 0.01)
+        assertTrue(updated.netPnl < -1950.0)
     }
 
     @Test

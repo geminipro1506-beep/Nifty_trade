@@ -1,6 +1,7 @@
 package com.cloudscope.moneyprinter.domain.risk
 
 import com.cloudscope.moneyprinter.data.model.TradingSignal
+import com.cloudscope.moneyprinter.domain.options.ContractSpecificationService
 import com.cloudscope.moneyprinter.domain.signal.ChargesCalculator
 import java.util.Calendar
 import java.util.TimeZone
@@ -11,7 +12,8 @@ import kotlin.math.min
 
 object RiskManager {
 
-    const val NIFTY_LOT_SIZE = 25 // Current NSE NIFTY contract lot size
+    val NIFTY_LOT_SIZE: Int
+        get() = ContractSpecificationService.CURRENT_NIFTY_LOT_SIZE // 65 units per lot under NSE authorized specification
 
     data class PositionSizingResult(
         val lots: Int,
@@ -229,17 +231,19 @@ object RiskManager {
         signal: TradingSignal,
         riskPercent: Double = 2.0
     ): PositionSizingResult {
+        val effectiveLotSize = if (signal.lotSize > 0) signal.lotSize else NIFTY_LOT_SIZE
         val eval = calculateInstitutionalPositionSize(
             actualCapital = capital,
             entryPrice = signal.entryPrice,
             stopLoss = signal.stopLoss,
             riskPercentOfCapital = riskPercent,
+            lotSize = effectiveLotSize,
             confidenceScore = signal.confidencePercent
         )
 
         return PositionSizingResult(
             lots = eval.approvedLots,
-            totalQuantity = eval.approvedLots * NIFTY_LOT_SIZE,
+            totalQuantity = eval.approvedLots * effectiveLotSize,
             totalCapitalRequired = eval.totalMarginRequired,
             maxRiskAmount = eval.approvedLots * eval.totalRiskPerLot,
             riskPercentOfCapital = if (capital > 0) ((eval.approvedLots * eval.totalRiskPerLot) / capital) * 100.0 else 0.0,

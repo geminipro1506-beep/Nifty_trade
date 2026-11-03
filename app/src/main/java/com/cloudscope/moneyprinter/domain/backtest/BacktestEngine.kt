@@ -224,7 +224,7 @@ object BacktestEngine {
         var entryTime = 0L
         var tradeIdCounter = 1
 
-        val lotSize = 25
+        val lotSize = com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.getLotSize("NIFTY")
         val windowSize = 20
 
         for (i in windowSize until windowCandles.size) {

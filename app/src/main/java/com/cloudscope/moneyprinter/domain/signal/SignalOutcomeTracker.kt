@@ -62,7 +62,9 @@ object SignalOutcomeTracker {
             ambiguousReason = null,
             candleResolution = candleResolution,
             targetAndSlSameCandle = false,
-            finalResolutionStatus = null
+            finalResolutionStatus = null,
+            lots = signal.lots,
+            lotSize = signal.lotSize
         )
     }
 
@@ -86,8 +88,8 @@ object SignalOutcomeTracker {
             return record
         }
 
-        val lotSize = 25
-        val lots = 1
+        val lotSize = if (record.lotSize > 0) record.lotSize else com.cloudscope.moneyprinter.domain.options.ContractSpecificationService.getLotSize("NIFTY", record.expiryDate)
+        val lots = if (record.lots > 0) record.lots else 1
         val logs = record.adjustmentsLog.toMutableList()
 
         // 1. PENDING_ENTRY handling

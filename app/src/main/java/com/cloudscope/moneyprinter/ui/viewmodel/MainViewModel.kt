@@ -25,15 +25,15 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 class MainViewModel(
-    private val repository: MarketDataRepository,
-    private val securePreferences: SecurePreferences,
+    private val repository: MarketDataRepository? = null,
+    private val securePreferences: SecurePreferences? = null,
     private val signalRepository: SignalRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         MainUiState(
-            isDarkTheme = securePreferences.isDarkThemeEnabled(),
-            autoRefreshEnabled = securePreferences.isAutoRefreshEnabled()
+            isDarkTheme = securePreferences?.isDarkThemeEnabled() ?: true,
+            autoRefreshEnabled = securePreferences?.isAutoRefreshEnabled() ?: true
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -48,21 +48,23 @@ class MainViewModel(
 
     init {
         // Collect repository states
-        viewModelScope.launch {
-            repository.connectionState.collect { conn ->
-                _uiState.update { it.copy(connectionState = conn) }
+        repository?.let { repo ->
+            viewModelScope.launch {
+                repo.connectionState.collect { conn ->
+                    _uiState.update { it.copy(connectionState = conn) }
+                }
             }
-        }
 
-        viewModelScope.launch {
-            repository.latestQuote.collect { quote ->
-                updateMarketAnalysis(quote, repository.latestOptionChain.value)
+            viewModelScope.launch {
+                repo.latestQuote.collect { quote ->
+                    updateMarketAnalysis(quote, repo.latestOptionChain.value)
+                }
             }
-        }
 
-        viewModelScope.launch {
-            repository.latestOptionChain.collect { chain ->
-                updateMarketAnalysis(repository.latestQuote.value, chain)
+            viewModelScope.launch {
+                repo.latestOptionChain.collect { chain ->
+                    updateMarketAnalysis(repo.latestQuote.value, chain)
+                }
             }
         }
 
@@ -87,8 +89,10 @@ class MainViewModel(
         // Run default out-of-sample backtest simulation
         runBacktestSimulation()
 
-        // Start polling loop
-        startAutoRefresh()
+        // Start polling loop only if repository is present and autoRefresh is enabled
+        if (repository != null && _uiState.value.autoRefreshEnabled) {
+            startAutoRefresh()
+        }
 
         // Initial fetch
         refreshMarketData()
@@ -192,13 +196,13 @@ class MainViewModel(
 
     fun toggleAutoRefresh() {
         val next = !_uiState.value.autoRefreshEnabled
-        securePreferences.setAutoRefreshEnabled(next)
+        securePreferences?.setAutoRefreshEnabled(next)
         _uiState.update { it.copy(autoRefreshEnabled = next) }
     }
 
     fun toggleTheme() {
         val newTheme = !_uiState.value.isDarkTheme
-        securePreferences.setDarkThemeEnabled(newTheme)
+        securePreferences?.setDarkThemeEnabled(newTheme)
         _uiState.update { it.copy(isDarkTheme = newTheme) }
     }
 
@@ -213,7 +217,7 @@ class MainViewModel(
     fun refreshMarketData() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
-            repository.refreshMarketData()
+            repository?.refreshMarketData()
             _uiState.update { it.copy(isRefreshing = false) }
         }
     }
@@ -224,17 +228,17 @@ class MainViewModel(
         brokerType: BrokerType = BrokerType.ZERODHA,
         clientId: String = ""
     ) {
-        repository.saveCredentials(apiKey, accessToken, brokerType, clientId)
+        repository?.saveCredentials(apiKey, accessToken, brokerType, clientId)
         refreshMarketData()
     }
 
     fun saveBrokerType(brokerType: BrokerType) {
-        repository.saveBrokerType(brokerType)
+        repository?.saveBrokerType(brokerType)
         refreshMarketData()
     }
 
     fun clearCredentials() {
-        repository.clearCredentials()
+        repository?.clearCredentials()
         refreshMarketData()
     }
 
@@ -245,7 +249,8 @@ class MainViewModel(
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(testConnectionResult = "Validating ${brokerType.displayName}...") }
-            val result = repository.testConnection(apiKey, accessToken, brokerType)
+            val result = repository?.testConnection(apiKey, accessToken, brokerType)
+                ?: Result.failure(Exception("Repository unavailable"))
             if (result.isSuccess) {
                 val successMsg = when (brokerType) {
                     BrokerType.NONE_STANDALONE -> "Success: Standalone Mode Active (Zero Broker Setup Required)"
@@ -263,7 +268,7 @@ class MainViewModel(
 
     fun runBacktestSimulation() {
         viewModelScope.launch {
-            val candles = repository.historicalCandles.value
+            val candles = repository?.historicalCandles?.value ?: emptyList()
             val result = BacktestEngine.runBacktest(candles)
             _uiState.update { it.copy(backtestResult = result) }
         }
@@ -275,14 +280,14 @@ class MainViewModel(
             while (isActive) {
                 delay(5000) // 5 second polling interval
                 if (_uiState.value.autoRefreshEnabled) {
-                    repository.refreshMarketData()
+                    repository?.refreshMarketData()
                 }
             }
         }
     }
 
     private fun updateMarketAnalysis(quote: MarketQuote?, optionChain: OptionChain?) {
-        val candles = repository.historicalCandles.value
+        val candles = repository?.historicalCandles?.value ?: emptyList()
         val isMarketHours = RiskManager.isWithinTradingHours()
 
         if (quote == null || candles.isEmpty()) {
@@ -302,7 +307,7 @@ class MainViewModel(
         val pdl = quote.low
         val pdc = quote.close
         val pcr = optionChain?.pcr ?: 1.05
-        val vix = repository.latestVix.value
+        val vix = repository?.latestVix?.value ?: 15.0
 
         // Compute technical indicators
         val indicators = IndicatorEngine.evaluateIndicators(
@@ -481,7 +486,66 @@ class MainViewModel(
         }
     }
 
-    fun getBrokerCredentials(): BrokerCredentials = repository.getCredentials()
+    fun selectSignalDetail(signal: HistoricalSignalRecord?) {
+        _uiState.update {
+            it.copy(
+                selectedDetailSignal = signal,
+                isSignalDetailLoading = false,
+                signalDetailError = null
+            )
+        }
+    }
+
+    fun selectSignalDetailById(signalId: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSignalDetailLoading = true, signalDetailError = null) }
+            try {
+                val record = _uiState.value.historicalSignals.find { it.id == signalId }
+                    ?: signalRepository?.getSignalById(signalId)
+                if (record != null) {
+                    _uiState.update {
+                        it.copy(
+                            selectedDetailSignal = record,
+                            isSignalDetailLoading = false,
+                            signalDetailError = null
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            selectedDetailSignal = null,
+                            isSignalDetailLoading = false,
+                            signalDetailError = "Signal record #$signalId was not found in audit database."
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        selectedDetailSignal = null,
+                        isSignalDetailLoading = false,
+                        signalDetailError = "Failed to load signal #$signalId: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissSignalDetail() {
+        _uiState.update {
+            it.copy(
+                selectedDetailSignal = null,
+                isSignalDetailLoading = false,
+                signalDetailError = null
+            )
+        }
+    }
+
+    fun retrySignalDetail(signalId: String) {
+        selectSignalDetailById(signalId)
+    }
+
+    fun getBrokerCredentials(): BrokerCredentials = repository?.getCredentials() ?: BrokerCredentials()
 
     override fun onCleared() {
         super.onCleared()

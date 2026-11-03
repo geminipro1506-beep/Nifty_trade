@@ -44,5 +44,10 @@ data class MainUiState(
     val selectedStrategyFilter: StrategyFilter = StrategyFilter.ALL,
     val selectedOptionFilter: OptionFilter = OptionFilter.ALL,
     val paperTradingOnlyFilter: Boolean = false,
-    val notificationMessage: String? = null
+    val notificationMessage: String? = null,
+
+    // Signal Audit Details Modal
+    val selectedDetailSignal: HistoricalSignalRecord? = null,
+    val isSignalDetailLoading: Boolean = false,
+    val signalDetailError: String? = null
 )
