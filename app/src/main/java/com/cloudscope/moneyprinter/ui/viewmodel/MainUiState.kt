@@ -1,6 +1,8 @@
 package com.cloudscope.moneyprinter.ui.viewmodel
 
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.domain.alert.AlertSettings
+import com.cloudscope.moneyprinter.domain.alert.MarketAlert
 
 enum class TerminalNavTab(val title: String) {
     DASHBOARD("Dashboard"),
@@ -49,5 +51,13 @@ data class MainUiState(
     // Signal Audit Details Modal
     val selectedDetailSignal: HistoricalSignalRecord? = null,
     val isSignalDetailLoading: Boolean = false,
-    val signalDetailError: String? = null
+    val signalDetailError: String? = null,
+
+    // Real-Time Notification & Alert System
+    val alerts: List<MarketAlert> = emptyList(),
+    val unreadAlertCount: Int = 0,
+    val activeInAppAlert: MarketAlert? = null,
+    val alertSettings: AlertSettings = AlertSettings(),
+    val showAlertsPanel: Boolean = false,
+    val isBackgroundMonitoringActive: Boolean = false
 )

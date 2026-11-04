@@ -1,9 +1,16 @@
 package com.cloudscope.moneyprinter.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.cloudscope.moneyprinter.data.local.AlertPreferences
 import com.cloudscope.moneyprinter.data.local.SecurePreferences
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.domain.alert.AlertSettings
+import com.cloudscope.moneyprinter.domain.alert.AndroidNotificationDispatcher
+import com.cloudscope.moneyprinter.domain.alert.MarketAlert
+import com.cloudscope.moneyprinter.domain.alert.MarketAlertEngine
+import com.cloudscope.moneyprinter.domain.alert.MarketAlertType
 import com.cloudscope.moneyprinter.domain.backtest.BacktestEngine
 import com.cloudscope.moneyprinter.domain.indicator.IndicatorEngine
 import com.cloudscope.moneyprinter.domain.paper.PaperTradingManager
@@ -14,6 +21,7 @@ import com.cloudscope.moneyprinter.domain.signal.SignalOutcomeTracker
 import com.cloudscope.moneyprinter.domain.strategy.StrategyImprovementEngine
 import com.cloudscope.moneyprinter.data.repository.MarketDataRepository
 import com.cloudscope.moneyprinter.data.repository.SignalRepository
+import com.cloudscope.moneyprinter.service.MarketMonitoringService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,18 +35,30 @@ import kotlin.math.abs
 class MainViewModel(
     private val repository: MarketDataRepository? = null,
     private val securePreferences: SecurePreferences? = null,
-    private val signalRepository: SignalRepository? = null
+    private val signalRepository: SignalRepository? = null,
+    private val alertPreferences: AlertPreferences? = null,
+    private val notificationDispatcher: AndroidNotificationDispatcher? = null
 ) : ViewModel() {
+
+    private val initialAlertSettings = alertPreferences?.getAlertSettings() ?: AlertSettings()
+    private val initialAlerts = alertPreferences?.getAlertHistory() ?: emptyList()
+    private val initialBgMonitoring = alertPreferences?.isBackgroundMonitoringEnabled() ?: false
 
     private val _uiState = MutableStateFlow(
         MainUiState(
             isDarkTheme = securePreferences?.isDarkThemeEnabled() ?: true,
-            autoRefreshEnabled = securePreferences?.isAutoRefreshEnabled() ?: true
+            autoRefreshEnabled = securePreferences?.isAutoRefreshEnabled() ?: true,
+            alertSettings = initialAlertSettings,
+            alerts = initialAlerts,
+            unreadAlertCount = initialAlerts.count { !it.isRead },
+            isBackgroundMonitoringActive = initialBgMonitoring
         )
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var pollingJob: Job? = null
+    private var inAppAlertDismissJob: Job? = null
+    private val alertEngine = MarketAlertEngine()
     private val paperManager: PaperTradingManager? = signalRepository?.let { PaperTradingManager(it) }
 
     // Signal generation cooldown tracking (15 min cooldown for identical strike)
@@ -340,6 +360,18 @@ class MainViewModel(
         // Evaluate Cooldown & Auto-record new signals
         recordSignalIfQualified(enrichedSignal, indicators)
 
+        // Evaluate Market Condition Alerts
+        val triggeredAlerts = alertEngine.evaluate(
+            quote = quote,
+            indicators = indicators,
+            signal = enrichedSignal,
+            candles = candles,
+            settings = _uiState.value.alertSettings
+        )
+        if (triggeredAlerts.isNotEmpty()) {
+            handleTriggeredAlerts(triggeredAlerts)
+        }
+
         _uiState.update {
             it.copy(
                 quote = quote,
@@ -547,8 +579,103 @@ class MainViewModel(
 
     fun getBrokerCredentials(): BrokerCredentials = repository?.getCredentials() ?: BrokerCredentials()
 
+    // ----------------------------------------------------
+    // Real-Time Notification & Alert Controls
+    // ----------------------------------------------------
+    private fun handleTriggeredAlerts(newAlerts: List<MarketAlert>) {
+        val settings = _uiState.value.alertSettings
+        for (alert in newAlerts) {
+            notificationDispatcher?.dispatchAlert(alert, settings)
+        }
+
+        val currentList = _uiState.value.alerts.toMutableList()
+        currentList.addAll(0, newAlerts)
+        val trimmed = currentList.take(100)
+        val unread = trimmed.count { !it.isRead }
+        val latest = newAlerts.lastOrNull()
+
+        _uiState.update {
+            it.copy(
+                alerts = trimmed,
+                unreadAlertCount = unread,
+                activeInAppAlert = latest
+            )
+        }
+
+        alertPreferences?.saveAlertHistory(trimmed)
+
+        inAppAlertDismissJob?.cancel()
+        inAppAlertDismissJob = viewModelScope.launch {
+            delay(6000L) // Auto-dismiss banner after 6 seconds
+            _uiState.update { it.copy(activeInAppAlert = null) }
+        }
+    }
+
+    fun setAlertsPanelVisible(visible: Boolean) {
+        _uiState.update { it.copy(showAlertsPanel = visible) }
+    }
+
+    fun dismissInAppAlert() {
+        inAppAlertDismissJob?.cancel()
+        _uiState.update { it.copy(activeInAppAlert = null) }
+    }
+
+    fun markAllAlertsAsRead() {
+        val updated = _uiState.value.alerts.map { it.copy(isRead = true) }
+        _uiState.update {
+            it.copy(
+                alerts = updated,
+                unreadAlertCount = 0
+            )
+        }
+        alertPreferences?.saveAlertHistory(updated)
+    }
+
+    fun clearAlertHistory() {
+        _uiState.update {
+            it.copy(
+                alerts = emptyList(),
+                unreadAlertCount = 0
+            )
+        }
+        alertPreferences?.saveAlertHistory(emptyList())
+    }
+
+    fun updateAlertSettings(settings: AlertSettings) {
+        alertPreferences?.saveAlertSettings(settings)
+        _uiState.update { it.copy(alertSettings = settings) }
+    }
+
+    fun toggleBackgroundMonitoring(context: Context) {
+        val current = _uiState.value.isBackgroundMonitoringActive
+        val next = !current
+        alertPreferences?.setBackgroundMonitoringEnabled(next)
+        _uiState.update { it.copy(isBackgroundMonitoringActive = next) }
+        if (next) {
+            MarketMonitoringService.startService(context)
+        } else {
+            MarketMonitoringService.stopService(context)
+        }
+    }
+
+    fun triggerTestAlert() {
+        val currentPrice = _uiState.value.quote?.lastPrice ?: 24850.50
+        val testAlert = MarketAlert(
+            type = MarketAlertType.DIRECTION_BULLISH,
+            title = "🟢 Test Alert: NIFTY 50 Shifted BULLISH",
+            message = "Dynamic AI directional confidence +18% on confirmed VWAP breakout above ₹${String.format(java.util.Locale.US, "%.2f", currentPrice)}.",
+            spotPrice = currentPrice,
+            previousDirection = MarketDirection.SIDEWAYS,
+            newDirection = MarketDirection.BULLISH,
+            previousConfidence = 52,
+            newConfidence = 76
+        )
+        handleTriggeredAlerts(listOf(testAlert))
+    }
+
     override fun onCleared() {
         super.onCleared()
         pollingJob?.cancel()
+        inAppAlertDismissJob?.cancel()
     }
 }

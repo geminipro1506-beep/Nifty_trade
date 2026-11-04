@@ -1,5 +1,9 @@
 package com.cloudscope.moneyprinter.ui.screens
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.TrendingFlat
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Brightness4
 import androidx.compose.material.icons.filled.Brightness7
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +34,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.MarketDirection
+import com.cloudscope.moneyprinter.ui.components.alerts.AlertsPanelDialog
+import com.cloudscope.moneyprinter.ui.components.alerts.InAppAlertBanner
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 import com.cloudscope.moneyprinter.ui.viewmodel.MainViewModel
 import java.text.NumberFormat
@@ -42,6 +50,18 @@ fun HomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val colors = LocalTerminalColors.current
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        // User responded to permission request
+    }
+
+    val requestNotificationPermission = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     val quote = uiState.quote
     val indicators = uiState.indicators
@@ -124,6 +144,35 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    // Real-Time Notification Bell with Badge
+                    IconButton(
+                        onClick = { viewModel.setAlertsPanelVisible(true) },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (uiState.unreadAlertCount > 0) {
+                                    Badge(
+                                        containerColor = colors.bearish,
+                                        contentColor = Color.White
+                                    ) {
+                                        Text(
+                                            text = if (uiState.unreadAlertCount > 9) "9+" else "${uiState.unreadAlertCount}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.unreadAlertCount > 0) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                contentDescription = "Alerts & Notifications",
+                                tint = if (uiState.unreadAlertCount > 0) colors.bullish else colors.textPrimary
+                            )
+                        }
+                    }
+
                     // Manual Refresh Button
                     IconButton(
                         onClick = { viewModel.refreshMarketData() },
@@ -496,7 +545,30 @@ fun HomeScreen(
                     )
                 }
             }
+
+            // Real-Time In-App Alert Banner
+            InAppAlertBanner(
+                alert = uiState.activeInAppAlert,
+                onDismiss = { viewModel.dismissInAppAlert() },
+                onOpenPanel = { viewModel.setAlertsPanelVisible(true) },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = 600.dp)
+            )
         }
+    }
+
+    if (uiState.showAlertsPanel) {
+        AlertsPanelDialog(
+            uiState = uiState,
+            onDismiss = { viewModel.setAlertsPanelVisible(false) },
+            onUpdateSettings = { viewModel.updateAlertSettings(it) },
+            onMarkAllRead = { viewModel.markAllAlertsAsRead() },
+            onClearHistory = { viewModel.clearAlertHistory() },
+            onToggleBackgroundMonitoring = { ctx -> viewModel.toggleBackgroundMonitoring(ctx) },
+            onTriggerTestAlert = { viewModel.triggerTestAlert() },
+            onRequestPermission = requestNotificationPermission
+        )
     }
 }
 
