@@ -14,6 +14,18 @@ data class MarketQuote(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class NiftyFuturesQuote(
+    val symbol: String = "NIFTY FUT",
+    val lastPrice: Double,
+    val change: Double,
+    val pChange: Double,
+    val openInterest: Long,
+    val changeInOi: Long,
+    val volume: Long,
+    val vwap: Double,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class IndiaVixQuote(
     val lastPrice: Double,
     val change: Double,

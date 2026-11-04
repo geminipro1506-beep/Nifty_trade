@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.MarketDirection
+import com.cloudscope.moneyprinter.ui.components.SmartMoneyOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.components.alerts.AlertsPanelDialog
 import com.cloudscope.moneyprinter.ui.components.alerts.InAppAlertBanner
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
@@ -523,7 +524,14 @@ fun HomeScreen(
                 }
 
                 // ==========================================
-                // 3. MINIMAL FOOTER
+                // 3. SMART MONEY OPTIONS SIGNAL
+                // ==========================================
+                SmartMoneyOptionsSignalCard(
+                    signal = uiState.smartMoneySignal
+                )
+
+                // ==========================================
+                // 4. MINIMAL FOOTER
                 // ==========================================
                 Row(
                     modifier = Modifier.fillMaxWidth(),

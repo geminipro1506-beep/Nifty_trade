@@ -12,6 +12,8 @@ Built with **Kotlin**, **Jetpack Compose**, and **Material 3**, the application 
 - **Strictly NIFTY 50 Intraday Focus**: No portfolio bloat, no paper trading distractions, no social feeds. Only actionable intraday options intelligence.
 - **Zero Mock / Authentic Broker Feed**: Integrates directly with the **Zerodha Kite Connect API** for real-time tick-by-tick spot prices, option chains, Greeks, India VIX, and open interest.
 - **Deterministic Multi-Factor Signal Engine**: Zero black-box hallucinations. Evaluates 17+ technical and derivative metrics (VWAP, 20/50/200 EMA, RSI 14, MACD, Volume, 15m Opening Range Breakout, Support/Resistance, PCR, OI change).
+- **Smart Money Options Intelligence**: Institutional flow detection combining Spot & Futures volume surges ($\ge 1.5\times$), VWAP reclaim/rejection, liquidity sweeps (BSL/SSL traps), Futures Price & OI buildup regime classification (Long Buildup, Short Buildup, Short Covering, Long Unwinding), and options chain institutional writing/buying confirmation.
+- **Actionable CE/PE Directional Signals**: High-probability `BUY CE`, `BUY PE`, and `NO TRADE` setups with ATM / 1-step ITM strike selection, entry zone, SL, targets calculated directly from live option premium data, and net risk/reward factoring in brokerage and statutory charges.
 - **Calibrated Statistical Confidence**: Probabilities derived from multi-factor logistic regressions and out-of-sample performance—never arbitrary percentages. If data is insufficient or regime unstable, displays `LOW CONFIDENCE`.
 - **Options Contract Selection**: Automated selection of liquid ATM/slightly ITM contracts with Delta ~0.50, tight bid-ask spreads, and ₹0.05 tick-size compliance.
 - **Audited Historical Backtesting Engine**: Multi-scenario backtest engine with transaction costs (STT 0.1%, Brokerage ₹40 roundtrip, GST 18%, Exchange turnover 0.05%, slippage 0.5 pt) and 15:15 IST auto square-off.
@@ -41,6 +43,11 @@ app/
  │         ├── MarketDataRepository.kt     # Data contract
  │         └── MarketDataRepositoryImpl.kt # Multi-instrument sync & synthetic chain
  ├── domain/
+ │    ├── smartmoney/
+ │    │    ├── SmartMoneyModels.kt         # Spot/Futures activity, OI regimes, signal models
+ │    │    ├── SmartMoneyDetector.kt       # Volume surge, VWAP reclaim, liquidity sweep, price & OI
+ │    │    ├── OptionsConfirmationEngine.kt# Writing vs buying, strike ΔOI, PCR, ATM volume
+ │    │    └── SmartMoneySignalEngine.kt   # BUY CE/PE, premium-derived SL/Target, charges & R:R
  │    ├── indicator/
  │    │    └── IndicatorEngine.kt          # Wilder RSI, EMA, VWAP, MACD, ATR, ORB, Pivots
  │    ├── options/
@@ -56,6 +63,7 @@ app/
  └── ui/
       ├── components/
       │    ├── MarketSignalTile.kt         # Compact top status tile (Spot, Direction, AI %)
+      │    ├── SmartMoneyOptionsSignalCard.kt # Compact Smart Money Options Signal section
       │    ├── TradeSignalCard.kt          # BUY CE/PE, Entry, SL, T1, T2, R:R, NO TRADE
       │    ├── IndicatorsGrid.kt           # 8-metric technical dashboard
       │    ├── OptionChainSummaryCard.kt   # PCR, Max Pain, OI change, ATM strike grid

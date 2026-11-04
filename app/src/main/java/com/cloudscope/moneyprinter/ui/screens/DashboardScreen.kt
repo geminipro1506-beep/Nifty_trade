@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.ui.components.SmartMoneyOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 import com.cloudscope.moneyprinter.ui.viewmodel.MainUiState
 import com.cloudscope.moneyprinter.ui.viewmodel.MainViewModel
@@ -292,6 +293,13 @@ fun DashboardScreen(
                 }
             }
         }
+
+        // ==========================================
+        // SMART MONEY OPTIONS SIGNAL CARD
+        // ==========================================
+        SmartMoneyOptionsSignalCard(
+            signal = uiState.smartMoneySignal
+        )
 
         // ==========================================
         // 3. PRIMARY LIVE TRADE SIGNAL CARD

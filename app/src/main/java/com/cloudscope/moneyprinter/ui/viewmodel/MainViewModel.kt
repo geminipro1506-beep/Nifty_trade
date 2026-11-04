@@ -21,6 +21,7 @@ import com.cloudscope.moneyprinter.domain.signal.SignalOutcomeTracker
 import com.cloudscope.moneyprinter.domain.strategy.StrategyImprovementEngine
 import com.cloudscope.moneyprinter.data.repository.MarketDataRepository
 import com.cloudscope.moneyprinter.data.repository.SignalRepository
+import com.cloudscope.moneyprinter.domain.smartmoney.*
 import com.cloudscope.moneyprinter.service.MarketMonitoringService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -84,6 +85,12 @@ class MainViewModel(
             viewModelScope.launch {
                 repo.latestOptionChain.collect { chain ->
                     updateMarketAnalysis(repo.latestQuote.value, chain)
+                }
+            }
+
+            viewModelScope.launch {
+                repo.latestFuturesQuote.collect { fut ->
+                    _uiState.update { it.copy(futuresQuote = fut) }
                 }
             }
         }
@@ -315,6 +322,8 @@ class MainViewModel(
                 it.copy(
                     quote = null,
                     signal = TradingSignal.noTrade("Awaiting live market data."),
+                    smartMoneyActivity = null,
+                    smartMoneySignal = null,
                     indicators = null,
                     supportResistance = null,
                     isMarketOpen = isMarketHours
@@ -341,6 +350,36 @@ class MainViewModel(
 
         // Compute Support & Resistance levels
         val srLevels = IndicatorEngine.calculateSupportResistance(pdh, pdl, pdc)
+
+        // Compute Smart Money Activity on Spot & Futures
+        val futures = repository?.latestFuturesQuote?.value ?: _uiState.value.futuresQuote
+        val smartMoneyActivity = SmartMoneyDetector.analyzeSmartMoney(
+            spotQuote = quote,
+            futuresQuote = futures,
+            candles = candles,
+            vwap = indicators.vwap,
+            pdh = pdh,
+            pdl = pdl,
+            orbHigh = indicators.orbHigh,
+            orbLow = indicators.orbLow
+        )
+
+        // Compute Option Chain institutional confirmation
+        val optionsConfirmation = OptionsConfirmationEngine.confirmOptions(
+            spotPrice = quote.lastPrice,
+            optionChain = optionChain
+        )
+
+        // Generate Smart Money Options Signal (BUY CE / BUY PE / NO TRADE)
+        val smartMoneySignal = SmartMoneySignalEngine.generateSignal(
+            spotQuote = quote,
+            smartMoneyActivity = smartMoneyActivity,
+            optionsDetails = optionsConfirmation,
+            optionChain = optionChain
+        )
+
+        // Evaluate Smart Money Signal Alerts (in-app notification, duplicate suppression, setup change)
+        evaluateSmartMoneySignalAlert(smartMoneySignal, quote)
 
         // Generate signal
         val rawSignal = SignalEngine.generateSignal(
@@ -375,7 +414,10 @@ class MainViewModel(
         _uiState.update {
             it.copy(
                 quote = quote,
+                futuresQuote = futures,
                 signal = enrichedSignal,
+                smartMoneyActivity = smartMoneyActivity,
+                smartMoneySignal = smartMoneySignal,
                 indicators = indicators,
                 optionChain = optionChain,
                 supportResistance = srLevels,
@@ -578,6 +620,19 @@ class MainViewModel(
     }
 
     fun getBrokerCredentials(): BrokerCredentials = repository?.getCredentials() ?: BrokerCredentials()
+
+    // ----------------------------------------------------
+    // Smart Money Options Alert Evaluation
+    // ----------------------------------------------------
+    private fun evaluateSmartMoneySignalAlert(
+        smartMoneySignal: SmartMoneySignal,
+        quote: MarketQuote
+    ) {
+        val alert = alertEngine.evaluateSmartMoneySignal(smartMoneySignal, quote)
+        if (alert != null) {
+            handleTriggeredAlerts(listOf(alert))
+        }
+    }
 
     // ----------------------------------------------------
     // Real-Time Notification & Alert Controls

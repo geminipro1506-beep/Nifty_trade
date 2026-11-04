@@ -7,6 +7,7 @@ interface MarketDataRepository {
     val connectionState: StateFlow<ConnectionState>
     val latestQuote: StateFlow<MarketQuote?>
     val latestOptionChain: StateFlow<OptionChain?>
+    val latestFuturesQuote: StateFlow<NiftyFuturesQuote?>
     val historicalCandles: StateFlow<List<HistoricalCandle>>
     val latestVix: StateFlow<Double>
 

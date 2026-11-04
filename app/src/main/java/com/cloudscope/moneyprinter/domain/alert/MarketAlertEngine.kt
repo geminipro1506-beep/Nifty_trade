@@ -26,6 +26,14 @@ class MarketAlertEngine {
     var lastVix: Double? = null
         private set
 
+    // Smart Money alert state tracking
+    var lastSmartMoneyAction: com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction = com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE
+        private set
+    var lastSmartMoneyStrike: String = ""
+        private set
+    var lastSmartMoneyTime: Long = 0L
+        private set
+
     // Cooldown tracking per alert type (timestamp in ms)
     private val lastAlertTimeByType = mutableMapOf<MarketAlertType, Long>()
 
@@ -39,6 +47,9 @@ class MarketAlertEngine {
         lastEma9 = null
         lastEma20 = null
         lastVix = null
+        lastSmartMoneyAction = com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE
+        lastSmartMoneyStrike = ""
+        lastSmartMoneyTime = 0L
         lastAlertTimeByType.clear()
     }
 
@@ -370,5 +381,52 @@ class MarketAlertEngine {
 
     private fun formatPrice(price: Double): String {
         return String.format(Locale.US, "%.2f", price)
+    }
+
+    /**
+     * Evaluates smart money options signal changes and returns an in-app alert when a new setup forms
+     * or the directional signal changes, while avoiding duplicate alerts.
+     */
+    fun evaluateSmartMoneySignal(
+        smartMoneySignal: com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignal?,
+        quote: MarketQuote,
+        now: Long = System.currentTimeMillis()
+    ): MarketAlert? {
+        if (smartMoneySignal == null || smartMoneySignal.action == com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE) {
+            if (lastSmartMoneyAction != com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE) {
+                lastSmartMoneyAction = com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE
+                lastSmartMoneyStrike = ""
+            }
+            return null
+        }
+
+        val action = smartMoneySignal.action
+        val strike = smartMoneySignal.suggestedStrike
+        val cooldownMillis = 10 * 60 * 1000L
+
+        val isSignalChanged = action != lastSmartMoneyAction
+        val isNewSetup = strike != lastSmartMoneyStrike
+        val isCooldownExpired = (now - lastSmartMoneyTime) > cooldownMillis
+
+        if (isSignalChanged || isNewSetup || isCooldownExpired) {
+            lastSmartMoneyAction = action
+            lastSmartMoneyStrike = strike
+            lastSmartMoneyTime = now
+
+            val isCe = action == com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.BUY_CE
+            val emoji = if (isCe) "🟢" else "🔴"
+            val alertType = if (isCe) MarketAlertType.DIRECTION_BULLISH else MarketAlertType.DIRECTION_BEARISH
+
+            return MarketAlert(
+                type = alertType,
+                title = "$emoji SMART MONEY: ${action.displayName} ($strike)",
+                message = "${smartMoneySignal.shortReason} • Entry: ${smartMoneySignal.entryZone} • SL: ${smartMoneySignal.stopLoss} • T1: ${smartMoneySignal.target1} (${smartMoneySignal.confidence.displayName} Confidence)",
+                timestamp = now,
+                spotPrice = quote.lastPrice,
+                newDirection = if (isCe) MarketDirection.BULLISH else MarketDirection.BEARISH,
+                newConfidence = if (smartMoneySignal.confidence == com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneyConfidence.STRONG) 85 else 70
+            )
+        }
+        return null
     }
 }
