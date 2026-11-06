@@ -150,6 +150,112 @@ object IndicatorEngine {
         return SupportResistanceLevels(pivot, r1, r2, s1, s2, pdh, pdl)
     }
 
+    data class SupertrendOutput(
+        val value: Double,
+        val isBullish: Boolean,
+        val upperBand: Double = 0.0,
+        val lowerBand: Double = 0.0
+    )
+
+    fun calculateSupertrend(
+        candles: List<HistoricalCandle>,
+        period: Int = 10,
+        multiplier: Double = 3.0
+    ): SupertrendOutput {
+        if (candles.isEmpty()) return SupertrendOutput(0.0, isBullish = true, 0.0, 0.0)
+        if (candles.size < period) {
+            val lastClose = candles.last().close
+            return SupertrendOutput(lastClose, isBullish = true, lastClose, lastClose)
+        }
+
+        val trList = mutableListOf<Double>()
+        for (i in candles.indices) {
+            if (i == 0) {
+                trList.add(candles[i].high - candles[i].low)
+            } else {
+                val high = candles[i].high
+                val low = candles[i].low
+                val prevClose = candles[i - 1].close
+                val tr = max(high - low, max(kotlin.math.abs(high - prevClose), kotlin.math.abs(low - prevClose)))
+                trList.add(tr)
+            }
+        }
+
+        val atrList = mutableListOf<Double>()
+        var runningAtr = trList.take(period).average()
+        for (i in 0 until period - 1) {
+            atrList.add(runningAtr)
+        }
+        atrList.add(runningAtr)
+
+        for (i in period until candles.size) {
+            runningAtr = (runningAtr * (period - 1) + trList[i]) / period
+            atrList.add(runningAtr)
+        }
+
+        var prevFinalUpper = 0.0
+        var prevFinalLower = 0.0
+        var prevSupertrend = 0.0
+        var isBullish = true
+
+        for (i in candles.indices) {
+            val candle = candles[i]
+            val atr = atrList[i]
+            val hl2 = (candle.high + candle.low) / 2.0
+            val basicUpper = hl2 + (multiplier * atr)
+            val basicLower = hl2 - (multiplier * atr)
+
+            val prevClose = if (i > 0) candles[i - 1].close else candle.close
+
+            val finalUpper = if (i == 0 || basicUpper < prevFinalUpper || prevClose > prevFinalUpper) {
+                basicUpper
+            } else {
+                prevFinalUpper
+            }
+
+            val finalLower = if (i == 0 || basicLower > prevFinalLower || prevClose < prevFinalLower) {
+                basicLower
+            } else {
+                prevFinalLower
+            }
+
+            val currentSupertrend: Double
+            if (i == 0) {
+                isBullish = candle.close >= finalLower
+                currentSupertrend = if (isBullish) finalLower else finalUpper
+            } else {
+                if (prevSupertrend == prevFinalUpper) {
+                    if (candle.close > finalUpper) {
+                        isBullish = true
+                        currentSupertrend = finalLower
+                    } else {
+                        isBullish = false
+                        currentSupertrend = finalUpper
+                    }
+                } else {
+                    if (candle.close < finalLower) {
+                        isBullish = false
+                        currentSupertrend = finalUpper
+                    } else {
+                        isBullish = true
+                        currentSupertrend = finalLower
+                    }
+                }
+            }
+
+            prevFinalUpper = finalUpper
+            prevFinalLower = finalLower
+            prevSupertrend = currentSupertrend
+        }
+
+        return SupertrendOutput(
+            value = prevSupertrend,
+            isBullish = isBullish,
+            upperBand = prevFinalUpper,
+            lowerBand = prevFinalLower
+        )
+    }
+
     fun evaluateIndicators(
         candles: List<HistoricalCandle>,
         pdh: Double,

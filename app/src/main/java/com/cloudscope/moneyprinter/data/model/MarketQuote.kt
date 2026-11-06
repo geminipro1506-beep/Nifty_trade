@@ -9,8 +9,8 @@ data class MarketQuote(
     val high: Double,
     val low: Double,
     val close: Double,
-    val vwap: Double,
-    val volume: Long,
+    val vwap: Double = 0.0,
+    val volume: Long = 0L,
     val timestamp: Long = System.currentTimeMillis()
 )
 

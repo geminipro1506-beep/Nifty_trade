@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.MarketDirection
+import com.cloudscope.moneyprinter.ui.components.NormalOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.components.SmartMoneyOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.components.alerts.AlertsPanelDialog
 import com.cloudscope.moneyprinter.ui.components.alerts.InAppAlertBanner
@@ -524,7 +525,14 @@ fun HomeScreen(
                 }
 
                 // ==========================================
-                // 3. SMART MONEY OPTIONS SIGNAL
+                // 3. NORMAL OPTIONS SIGNAL (NEW)
+                // ==========================================
+                NormalOptionsSignalCard(
+                    signal = uiState.normalOptionsSignal
+                )
+
+                // ==========================================
+                // 4. SMART MONEY OPTIONS SIGNAL (EXISTING)
                 // ==========================================
                 SmartMoneyOptionsSignalCard(
                     signal = uiState.smartMoneySignal

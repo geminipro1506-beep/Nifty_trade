@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.*
+import com.cloudscope.moneyprinter.ui.components.NormalOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.components.SmartMoneyOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 import com.cloudscope.moneyprinter.ui.viewmodel.MainUiState
@@ -293,6 +294,13 @@ fun DashboardScreen(
                 }
             }
         }
+
+        // ==========================================
+        // NORMAL OPTIONS SIGNAL CARD
+        // ==========================================
+        NormalOptionsSignalCard(
+            signal = uiState.normalOptionsSignal
+        )
 
         // ==========================================
         // SMART MONEY OPTIONS SIGNAL CARD

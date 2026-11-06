@@ -12,7 +12,9 @@ Built with **Kotlin**, **Jetpack Compose**, and **Material 3**, the application 
 - **Strictly NIFTY 50 Intraday Focus**: No portfolio bloat, no paper trading distractions, no social feeds. Only actionable intraday options intelligence.
 - **Zero Mock / Authentic Broker Feed**: Integrates directly with the **Zerodha Kite Connect API** for real-time tick-by-tick spot prices, option chains, Greeks, India VIX, and open interest.
 - **Deterministic Multi-Factor Signal Engine**: Zero black-box hallucinations. Evaluates 17+ technical and derivative metrics (VWAP, 20/50/200 EMA, RSI 14, MACD, Volume, 15m Opening Range Breakout, Support/Resistance, PCR, OI change).
+- **Normal Options Signal Engine**: Pure technical analysis and price action engine combining Supertrend (10, 3.0), EMA 9 & 21 trend alignment/crossover, Intraday VWAP positioning, Wilder's RSI 14 momentum, MACD histogram expansion, volume confirmation ($\ge 1.3\times$), and Support/Resistance / Opening Range Breakouts. Generates high-confidence `BUY CALL`, `BUY PUT`, `WAITING FOR CONFIRMATION`, and `NO TRADE` signals with dynamic ATM contract selection, live option premium entry, structural stop-loss, and multi-tier targets (1:1.5 and 1:2.0 R:R).
 - **Smart Money Options Intelligence**: Institutional flow detection combining Spot & Futures volume surges ($\ge 1.5\times$), VWAP reclaim/rejection, liquidity sweeps (BSL/SSL traps), Futures Price & OI buildup regime classification (Long Buildup, Short Buildup, Short Covering, Long Unwinding), and options chain institutional writing/buying confirmation.
+- **Dual Engine Independence**: The Normal Options Signal engine and Smart Money Options engine run completely independently. Both cards are stacked cleanly on the same realtime dashboard (Normal Signal directly above Smart Money Signal), allowing traders to spot confluence or divergence across technical price action and institutional order flow.
 - **Actionable CE/PE Directional Signals**: High-probability `BUY CE`, `BUY PE`, and `NO TRADE` setups with ATM / 1-step ITM strike selection, entry zone, SL, targets calculated directly from live option premium data, and net risk/reward factoring in brokerage and statutory charges.
 - **Calibrated Statistical Confidence**: Probabilities derived from multi-factor logistic regressions and out-of-sample performance—never arbitrary percentages. If data is insufficient or regime unstable, displays `LOW CONFIDENCE`.
 - **Options Contract Selection**: Automated selection of liquid ATM/slightly ITM contracts with Delta ~0.50, tight bid-ask spreads, and ₹0.05 tick-size compliance.
@@ -43,13 +45,16 @@ app/
  │         ├── MarketDataRepository.kt     # Data contract
  │         └── MarketDataRepositoryImpl.kt # Multi-instrument sync & synthetic chain
  ├── domain/
+ │    ├── normaloptions/
+ │    │    ├── NormalOptionsModels.kt      # Confluence factors, Signal actions, and normal signal model
+ │    │    └── NormalOptionsSignalEngine.kt # Supertrend, EMA 9/21, VWAP, RSI, MACD, Volume & ORB breakout engine
  │    ├── smartmoney/
  │    │    ├── SmartMoneyModels.kt         # Spot/Futures activity, OI regimes, signal models
  │    │    ├── SmartMoneyDetector.kt       # Volume surge, VWAP reclaim, liquidity sweep, price & OI
  │    │    ├── OptionsConfirmationEngine.kt# Writing vs buying, strike ΔOI, PCR, ATM volume
  │    │    └── SmartMoneySignalEngine.kt   # BUY CE/PE, premium-derived SL/Target, charges & R:R
  │    ├── indicator/
- │    │    └── IndicatorEngine.kt          # Wilder RSI, EMA, VWAP, MACD, ATR, ORB, Pivots
+ │    │    └── IndicatorEngine.kt          # Wilder RSI, EMA, Supertrend, VWAP, MACD, ATR, ORB, Pivots
  │    ├── options/
  │    │    ├── BlackScholes.kt             # Pricing, Delta, Gamma, Theta, Newton-Raphson IV
  │    │    └── OptionsSelector.kt          # Strike selection, tick-size rounding, SL/Target
@@ -63,6 +68,7 @@ app/
  └── ui/
       ├── components/
       │    ├── MarketSignalTile.kt         # Compact top status tile (Spot, Direction, AI %)
+      │    ├── NormalOptionsSignalCard.kt  # Normal Options Signal section (TA, Supertrend, Entry, Targets, SL)
       │    ├── SmartMoneyOptionsSignalCard.kt # Compact Smart Money Options Signal section
       │    ├── TradeSignalCard.kt          # BUY CE/PE, Entry, SL, T1, T2, R:R, NO TRADE
       │    ├── IndicatorsGrid.kt           # 8-metric technical dashboard

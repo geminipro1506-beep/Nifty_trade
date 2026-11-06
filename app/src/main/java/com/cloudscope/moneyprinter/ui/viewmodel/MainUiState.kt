@@ -19,6 +19,7 @@ data class MainUiState(
     val quote: MarketQuote? = null,
     val futuresQuote: NiftyFuturesQuote? = null,
     val signal: TradingSignal? = null,
+    val normalOptionsSignal: com.cloudscope.moneyprinter.domain.normaloptions.NormalOptionsSignal? = null,
     val smartMoneyActivity: com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneyActivity? = null,
     val smartMoneySignal: com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignal? = null,
     val indicators: TechnicalIndicators? = null,

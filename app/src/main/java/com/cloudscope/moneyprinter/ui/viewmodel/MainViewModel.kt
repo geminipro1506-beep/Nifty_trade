@@ -21,6 +21,7 @@ import com.cloudscope.moneyprinter.domain.signal.SignalOutcomeTracker
 import com.cloudscope.moneyprinter.domain.strategy.StrategyImprovementEngine
 import com.cloudscope.moneyprinter.data.repository.MarketDataRepository
 import com.cloudscope.moneyprinter.data.repository.SignalRepository
+import com.cloudscope.moneyprinter.domain.normaloptions.*
 import com.cloudscope.moneyprinter.domain.smartmoney.*
 import com.cloudscope.moneyprinter.service.MarketMonitoringService
 import kotlinx.coroutines.Job
@@ -322,6 +323,7 @@ class MainViewModel(
                 it.copy(
                     quote = null,
                     signal = TradingSignal.noTrade("Awaiting live market data."),
+                    normalOptionsSignal = NormalOptionsSignal.waitingForData(),
                     smartMoneyActivity = null,
                     smartMoneySignal = null,
                     indicators = null,
@@ -381,6 +383,15 @@ class MainViewModel(
         // Evaluate Smart Money Signal Alerts (in-app notification, duplicate suppression, setup change)
         evaluateSmartMoneySignalAlert(smartMoneySignal, quote)
 
+        // Generate Normal Options Signal (independent technical analysis & price action engine)
+        val normalOptionsSignal = NormalOptionsSignalEngine.generateSignal(
+            quote = quote,
+            candles = candles,
+            indicators = indicators,
+            optionChain = optionChain,
+            supportResistance = srLevels
+        )
+
         // Generate signal
         val rawSignal = SignalEngine.generateSignal(
             quote = quote,
@@ -416,6 +427,7 @@ class MainViewModel(
                 quote = quote,
                 futuresQuote = futures,
                 signal = enrichedSignal,
+                normalOptionsSignal = normalOptionsSignal,
                 smartMoneyActivity = smartMoneyActivity,
                 smartMoneySignal = smartMoneySignal,
                 indicators = indicators,
