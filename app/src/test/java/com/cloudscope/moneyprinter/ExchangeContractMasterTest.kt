@@ -8,7 +8,7 @@ import java.util.Calendar
 class ExchangeContractMasterTest {
 
     @Test
-    fun testThursdayHolidayPreponementToWednesday() {
+    fun testThursdayAndWednesdayHolidayPreponementToTuesday() {
         val ist = ExchangeContractMaster.IST_TIME_ZONE
         // Set date to Nov 6, 2026 (Friday after first Thursday Nov 5)
         val cal = Calendar.getInstance(ist).apply {
@@ -19,10 +19,10 @@ class ExchangeContractMasterTest {
             set(Calendar.MINUTE, 0)
         }
 
-        // Nov 12, 2026 is an official NSE trading holiday.
-        // The expiry MUST automatically prepone to Wednesday, Nov 11, 2026!
+        // Nov 11 & Nov 12, 2026 are official NSE trading holidays.
+        // The expiry MUST prepone to Tuesday, Nov 10, 2026!
         val expiry = ExchangeContractMaster.resolveNearestValidExpiry("NIFTY", cal.timeInMillis)
-        assertEquals("11 NOV 2026", expiry)
+        assertEquals("10 NOV 2026", expiry)
     }
 
     @Test
@@ -54,8 +54,24 @@ class ExchangeContractMasterTest {
         }
 
         val expiry = ExchangeContractMaster.resolveNearestValidExpiry("NIFTY", cal.timeInMillis)
-        // Nov 5 is expired, rolls to next week (which prepones from Nov 12 to Nov 11)
-        assertEquals("11 NOV 2026", expiry)
+        // Nov 5 is expired, rolls to next week (which prepones to Tuesday 10 NOV 2026 due to holidays)
+        assertEquals("10 NOV 2026", expiry)
+    }
+
+    @Test
+    fun testFinNiftyTuesdayExpiry() {
+        val ist = ExchangeContractMaster.IST_TIME_ZONE
+        // Set date to Nov 2, 2026 (Monday) -> FinNifty expires on Tuesday (Nov 3)
+        val cal = Calendar.getInstance(ist).apply {
+            set(Calendar.YEAR, 2026)
+            set(Calendar.MONTH, Calendar.NOVEMBER)
+            set(Calendar.DAY_OF_MONTH, 2)
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+
+        val expiry = ExchangeContractMaster.resolveNearestValidExpiry("FINNIFTY", cal.timeInMillis)
+        assertEquals("03 NOV 2026", expiry)
     }
 
     @Test

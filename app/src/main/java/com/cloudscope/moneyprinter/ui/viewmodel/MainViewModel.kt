@@ -127,7 +127,9 @@ class MainViewModel(
         // Initial fetch
         refreshMarketData()
         refreshAccuracyData()
-        startNewsMonitoring()
+        if (repository != null) {
+            startNewsMonitoring()
+        }
         viewModelScope.launch {
             paperManager?.refreshAccountState()
         }
@@ -322,7 +324,7 @@ class MainViewModel(
 
     private fun startNewsMonitoring() {
         newsJob?.cancel()
-        newsJob = viewModelScope.launch {
+        newsJob = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> }) {
             while (isActive) {
                 runCatching {
                     val articles = marketNewsService.getLatestMarketNews()

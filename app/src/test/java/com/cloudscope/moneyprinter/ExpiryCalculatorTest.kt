@@ -57,8 +57,8 @@ class ExpiryCalculatorTest {
         }
 
         val expiryInfo = ExpiryCalculator.calculateUpcomingExpiries(cal.timeInMillis)
-        // Nov 12, 2026 is an official NSE trading holiday, so it correctly prepones to Wednesday (11 NOV 2026)
-        assertTrue(expiryInfo.currentWeekly.contains("11 NOV 2026"))
-        assertTrue(expiryInfo.timeToCurrentExpiryDays > 4.5)
+        // Nov 11 & Nov 12, 2026 are exchange holidays, so expiry prepones to Tuesday (10 NOV 2026)
+        assertTrue(expiryInfo.currentWeekly.contains("10 NOV 2026"))
+        assertTrue(expiryInfo.timeToCurrentExpiryDays > 4.0)
     }
 }

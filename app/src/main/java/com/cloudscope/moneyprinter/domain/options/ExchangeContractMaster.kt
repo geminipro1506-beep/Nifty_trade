@@ -39,10 +39,10 @@ object ExchangeContractMaster {
         "2025-04-14", "2025-04-18", "2025-05-01", "2025-06-07", "2025-08-15",
         "2025-08-27", "2025-10-02", "2025-10-21", "2025-10-22", "2025-11-05",
         "2025-12-25",
-        // 2026 (Including Diwali / Bhai Dooj / Gurunanak holiday week where Nov 12 is an exchange holiday)
+        // 2026 (Including Diwali / Bhai Dooj / Gurunanak holiday week where Nov 11 & Nov 12 are exchange holidays)
         "2026-01-26", "2026-02-16", "2026-03-04", "2026-03-20", "2026-04-03",
         "2026-04-14", "2026-05-01", "2026-05-27", "2026-08-15", "2026-08-26",
-        "2026-10-02", "2026-10-20", "2026-11-09", "2026-11-10", "2026-11-12", // Nov 12, 2026 NSE Holiday
+        "2026-10-02", "2026-10-20", "2026-11-09", "2026-11-11", "2026-11-12", // Nov 11 & 12, 2026 NSE Holidays -> Expiry is on Tuesday (10 NOV 2026)
         "2026-11-24", "2026-12-25",
         // 2027
         "2027-01-26", "2027-03-08", "2027-03-23", "2027-03-26", "2027-04-14",
@@ -122,6 +122,7 @@ object ExchangeContractMaster {
         availableChainExpiries: List<String>? = null
     ): String {
         val normalizedUnderlying = when {
+            underlying.contains("FIN", ignoreCase = true) -> "FINNIFTY"
             underlying.contains("BANK", ignoreCase = true) -> "BANKNIFTY"
             underlying.contains("SENSEX", ignoreCase = true) -> "SENSEX"
             else -> "NIFTY"
@@ -233,8 +234,9 @@ object ExchangeContractMaster {
     ): Calendar? {
         val targetDayOfWeek = when (underlying) {
             "SENSEX" -> Calendar.FRIDAY // BSE Sensex expiries on Friday
+            "FINNIFTY" -> Calendar.TUESDAY // FinNifty expiries on Tuesday
             "BANKNIFTY" -> Calendar.THURSDAY // BankNifty monthly on Thursday
-            else -> Calendar.THURSDAY // Nifty weekly on Thursday
+            else -> Calendar.THURSDAY // Nifty weekly on Thursday (prepones to Tuesday when Wed & Thu are holidays)
         }
 
         val cal = (baseCal.clone() as Calendar).apply {

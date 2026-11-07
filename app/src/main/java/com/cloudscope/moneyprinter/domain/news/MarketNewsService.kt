@@ -72,76 +72,44 @@ class MarketNewsService(
     private fun parseRssFeed(xml: String, sourceName: String): List<MarketNewsArticle> {
         val articles = mutableListOf<MarketNewsArticle>()
         try {
-            val parser: XmlPullParser = Xml.newPullParser()
-            parser.setInput(StringReader(xml))
+            val itemRegex = Regex("<item[\\s>]([\\s\\S]*?)</item>", RegexOption.IGNORE_CASE)
+            val titleRegex = Regex("<title(?:\\s+[^>]*)?>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</title>", RegexOption.IGNORE_CASE)
+            val linkRegex = Regex("<link(?:\\s+[^>]*)?>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</link>", RegexOption.IGNORE_CASE)
+            val descRegex = Regex("<description(?:\\s+[^>]*)?>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</description>", RegexOption.IGNORE_CASE)
+            val pubDateRegex = Regex("<pubDate(?:\\s+[^>]*)?>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</pubDate>", RegexOption.IGNORE_CASE)
 
-            var eventType = parser.eventType
-            var inItem = false
-            var currentTitle = ""
-            var currentLink = ""
-            var currentDesc = ""
-            var currentPubDate = ""
+            for (match in itemRegex.findAll(xml)) {
+                val itemContent = match.groupValues[1]
+                val rawTitle = titleRegex.find(itemContent)?.groupValues?.get(1) ?: ""
+                val rawLink = linkRegex.find(itemContent)?.groupValues?.get(1) ?: ""
+                val rawDesc = descRegex.find(itemContent)?.groupValues?.get(1) ?: ""
+                val rawPubDate = pubDateRegex.find(itemContent)?.groupValues?.get(1) ?: ""
 
-            while (eventType != XmlPullParser.END_DOCUMENT) {
-                val tagName = parser.name ?: ""
+                if (rawTitle.isNotBlank()) {
+                    val cleanHeadline = cleanHtml(rawTitle)
+                    val cleanDesc = cleanHtml(rawDesc)
+                    val cleanLink = if (rawLink.trim().startsWith("http")) rawLink.trim() else "https://www.nseindia.com"
+                    val epochMillis = parseRssDate(rawPubDate)
 
-                when (eventType) {
-                    XmlPullParser.START_TAG -> {
-                        if (tagName.equals("item", ignoreCase = true)) {
-                            inItem = true
-                            currentTitle = ""
-                            currentLink = ""
-                            currentDesc = ""
-                            currentPubDate = ""
-                        } else if (inItem) {
-                            when {
-                                tagName.equals("title", ignoreCase = true) -> {
-                                    currentTitle = parser.nextText().trim()
-                                }
-                                tagName.equals("link", ignoreCase = true) -> {
-                                    currentLink = parser.nextText().trim()
-                                }
-                                tagName.equals("description", ignoreCase = true) -> {
-                                    currentDesc = parser.nextText().trim()
-                                }
-                                tagName.equals("pubDate", ignoreCase = true) -> {
-                                    currentPubDate = parser.nextText().trim()
-                                }
-                            }
-                        }
-                    }
-                    XmlPullParser.END_TAG -> {
-                        if (tagName.equals("item", ignoreCase = true) && inItem) {
-                            inItem = false
-                            if (currentTitle.isNotBlank()) {
-                                val cleanHeadline = cleanHtml(currentTitle)
-                                val cleanDesc = cleanHtml(currentDesc)
-                                val cleanLink = if (currentLink.startsWith("http")) currentLink else "https://www.nseindia.com"
-                                val epochMillis = parseRssDate(currentPubDate)
+                    val (sentiment, impact) = NewsSentimentAnalyzer.analyzeSentiment(cleanHeadline, cleanDesc)
+                    val istTime = NewsSentimentAnalyzer.formatEpochToIst(epochMillis)
+                    val id = "${cleanHeadline.hashCode()}_${epochMillis}"
 
-                                val (sentiment, impact) = NewsSentimentAnalyzer.analyzeSentiment(cleanHeadline, cleanDesc)
-                                val istTime = NewsSentimentAnalyzer.formatEpochToIst(epochMillis)
-                                val id = "${cleanHeadline.hashCode()}_${epochMillis}"
-
-                                articles.add(
-                                    MarketNewsArticle(
-                                        id = id,
-                                        headline = cleanHeadline,
-                                        summary = cleanDesc,
-                                        source = sourceName,
-                                        url = cleanLink,
-                                        publishedEpochMillis = epochMillis,
-                                        publishedTimeIst = istTime,
-                                        sentiment = sentiment,
-                                        impact = impact,
-                                        isBreaking = impact == NewsImpactLevel.HIGH
-                                    )
-                                )
-                            }
-                        }
-                    }
+                    articles.add(
+                        MarketNewsArticle(
+                            id = id,
+                            headline = cleanHeadline,
+                            summary = cleanDesc,
+                            source = sourceName,
+                            url = cleanLink,
+                            publishedEpochMillis = epochMillis,
+                            publishedTimeIst = istTime,
+                            sentiment = sentiment,
+                            impact = impact,
+                            isBreaking = impact == NewsImpactLevel.HIGH
+                        )
+                    )
                 }
-                eventType = parser.next()
             }
         } catch (_: Exception) {
             // Safe parser error handling
