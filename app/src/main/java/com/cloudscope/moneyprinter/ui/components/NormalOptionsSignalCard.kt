@@ -168,7 +168,7 @@ fun NormalOptionsSignalCard(
             if (confidence > 0) {
                 Spacer(modifier = Modifier.height(10.dp))
                 LinearProgressIndicator(
-                    progress = { confidence / 100f },
+                    progress = { (confidence / 100f).coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(5.dp)

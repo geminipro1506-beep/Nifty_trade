@@ -27,52 +27,56 @@ class AndroidNotificationDispatcher(private val context: Context) {
     }
 
     private fun createNotificationChannels() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val alertChannel = NotificationChannel(
-                CHANNEL_ALERTS_ID,
-                "NIFTY 50 Market Alerts",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Real-time direction changes, AI confidence surges, and technical breakouts"
-                enableLights(true)
-                enableVibration(true)
-            }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val alertChannel = NotificationChannel(
+                    CHANNEL_ALERTS_ID,
+                    "NIFTY 50 Market Alerts",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Real-time direction changes, AI confidence surges, and technical breakouts"
+                    enableLights(true)
+                    enableVibration(true)
+                }
 
-            val monitoringChannel = NotificationChannel(
-                CHANNEL_MONITORING_ID,
-                "NIFTY 50 Live Monitoring",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Background persistence for NIFTY 50 live market data and trigger evaluation"
-            }
+                val monitoringChannel = NotificationChannel(
+                    CHANNEL_MONITORING_ID,
+                    "NIFTY 50 Live Monitoring",
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = "Background persistence for NIFTY 50 live market data and trigger evaluation"
+                }
 
-            val systemManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            systemManager?.createNotificationChannel(alertChannel)
-            systemManager?.createNotificationChannel(monitoringChannel)
+                val systemManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                systemManager?.createNotificationChannel(alertChannel)
+                systemManager?.createNotificationChannel(monitoringChannel)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Error initializing notification channels: ${t.message}")
         }
     }
 
     fun dispatchAlert(alert: MarketAlert, settings: AlertSettings) {
-        if (!settings.notificationsEnabled) return
-
-        // 1. Audio tone if enabled
-        if (settings.soundEnabled) {
-            playAudioTone(alert.type)
-        }
-
-        // 2. Check Android 13+ POST_NOTIFICATIONS permission
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                Log.d(TAG, "Skipping system notification: POST_NOTIFICATIONS permission not granted")
-                return
-            }
-        }
-
         try {
+            if (!settings.notificationsEnabled) return
+
+            // 1. Audio tone if enabled
+            if (settings.soundEnabled) {
+                playAudioTone(alert.type)
+            }
+
+            // 2. Check Android 13+ POST_NOTIFICATIONS permission
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!granted) {
+                    Log.d(TAG, "Skipping system notification: POST_NOTIFICATIONS permission not granted")
+                    return
+                }
+            }
+
             val intent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
@@ -98,8 +102,8 @@ class AndroidNotificationDispatcher(private val context: Context) {
             notificationManager.notify(notificationId, notification)
         } catch (e: SecurityException) {
             Log.w(TAG, "SecurityException while dispatching alert: ${e.message}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error dispatching notification", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Error dispatching notification", t)
         }
     }
 
@@ -133,9 +137,9 @@ class AndroidNotificationDispatcher(private val context: Context) {
                 else -> ToneGenerator.TONE_PROP_BEEP
             }
 
-            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
-            toneGen.startTone(toneType, 220)
-            toneGen.release()
+            val toneGen = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 75)
+            toneGen.startTone(toneType, 180)
+            // Note: Do NOT call toneGen.release() immediately. Immediate release causes native C++ SIGSEGV in AAudio/OpenSL
         } catch (t: Throwable) {
             Log.w(TAG, "Could not play notification audio tone: ${t.message}")
         }

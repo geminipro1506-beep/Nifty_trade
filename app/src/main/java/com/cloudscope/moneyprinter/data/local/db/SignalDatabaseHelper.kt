@@ -140,7 +140,11 @@ class SignalDatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
         """.trimIndent()
         db.execSQL(createTableQuery)
 
-        preseedWalkForwardSignals(db)
+        try {
+            preseedWalkForwardSignals(db)
+        } catch (e: Throwable) {
+            // Ignore pre-seeding errors on clean install
+        }
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {

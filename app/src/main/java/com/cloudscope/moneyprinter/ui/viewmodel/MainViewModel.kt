@@ -1,6 +1,7 @@
 package com.cloudscope.moneyprinter.ui.viewmodel
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cloudscope.moneyprinter.data.local.AlertPreferences
@@ -70,48 +71,88 @@ class MainViewModel(
     private var lastRecordedStrike: Double = 0.0
     private var lastRecordedAction: SignalAction = SignalAction.NO_TRADE
 
+    private val safeHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        Log.e("MainViewModel", "Safe coroutine recovery: unhandled error caught", throwable)
+    }
+
     init {
         // Collect repository states
         repository?.let { repo ->
-            viewModelScope.launch {
-                repo.connectionState.collect { conn ->
-                    _uiState.update { it.copy(connectionState = conn) }
+            viewModelScope.launch(safeHandler) {
+                try {
+                    repo.connectionState.collect { conn ->
+                        _uiState.update { it.copy(connectionState = conn) }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "connectionState collection error", e)
                 }
             }
 
-            viewModelScope.launch {
-                repo.latestQuote.collect { quote ->
-                    updateMarketAnalysis(quote, repo.latestOptionChain.value)
+            viewModelScope.launch(safeHandler) {
+                try {
+                    repo.latestQuote.collect { quote ->
+                        try {
+                            updateMarketAnalysis(quote, repo.latestOptionChain.value)
+                        } catch (t: Throwable) {
+                            Log.e("MainViewModel", "quote updateMarketAnalysis error", t)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "latestQuote collection error", e)
                 }
             }
 
-            viewModelScope.launch {
-                repo.latestOptionChain.collect { chain ->
-                    updateMarketAnalysis(repo.latestQuote.value, chain)
+            viewModelScope.launch(safeHandler) {
+                try {
+                    repo.latestOptionChain.collect { chain ->
+                        try {
+                            updateMarketAnalysis(repo.latestQuote.value, chain)
+                        } catch (t: Throwable) {
+                            Log.e("MainViewModel", "chain updateMarketAnalysis error", t)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "latestOptionChain collection error", e)
                 }
             }
 
-            viewModelScope.launch {
-                repo.latestFuturesQuote.collect { fut ->
-                    _uiState.update { it.copy(futuresQuote = fut) }
+            viewModelScope.launch(safeHandler) {
+                try {
+                    repo.latestFuturesQuote.collect { fut ->
+                        _uiState.update { it.copy(futuresQuote = fut) }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "latestFuturesQuote collection error", e)
                 }
             }
         }
 
         // Collect signals from repository if available
         signalRepository?.let { repo ->
-            viewModelScope.launch {
-                repo.signalsFlow.collect { allSignals ->
-                    refreshAccuracyViews(allSignals)
+            viewModelScope.launch(safeHandler) {
+                try {
+                    repo.signalsFlow.collect { allSignals ->
+                        try {
+                            refreshAccuracyViews(allSignals)
+                        } catch (t: Throwable) {
+                            Log.e("MainViewModel", "signalsFlow refreshAccuracyViews error", t)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "signalsFlow collection error", e)
                 }
             }
         }
 
         // Collect paper trading account state
         paperManager?.let { paper ->
-            viewModelScope.launch {
-                paper.accountState.collect { acct ->
-                    _uiState.update { it.copy(paperAccount = acct) }
+            viewModelScope.launch(safeHandler) {
+                try {
+                    paper.accountState.collect { acct ->
+                        _uiState.update { it.copy(paperAccount = acct) }
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "paperAccount collection error", e)
                 }
             }
         }
@@ -130,8 +171,12 @@ class MainViewModel(
         if (repository != null) {
             startNewsMonitoring()
         }
-        viewModelScope.launch {
-            paperManager?.refreshAccountState()
+        viewModelScope.launch(safeHandler) {
+            try {
+                paperManager?.refreshAccountState()
+            } catch (t: Throwable) {
+                Log.w("MainViewModel", "paper refreshAccountState error", t)
+            }
         }
     }
 
@@ -248,10 +293,15 @@ class MainViewModel(
     }
 
     fun refreshMarketData() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isRefreshing = true) }
-            repository?.refreshMarketData()
-            _uiState.update { it.copy(isRefreshing = false) }
+        viewModelScope.launch(safeHandler) {
+            try {
+                _uiState.update { it.copy(isRefreshing = true) }
+                repository?.refreshMarketData()
+            } catch (e: Throwable) {
+                Log.w("MainViewModel", "refreshMarketData failure", e)
+            } finally {
+                _uiState.update { it.copy(isRefreshing = false) }
+            }
         }
     }
 
@@ -300,23 +350,35 @@ class MainViewModel(
     }
 
     fun runBacktestSimulation() {
-        viewModelScope.launch {
-            val candles = repository?.historicalCandles?.value ?: emptyList()
-            val result = BacktestEngine.runBacktest(candles)
-            _uiState.update { it.copy(backtestResult = result) }
+        viewModelScope.launch(safeHandler) {
+            try {
+                val candles = repository?.historicalCandles?.value ?: emptyList()
+                val result = BacktestEngine.runBacktest(candles)
+                _uiState.update { it.copy(backtestResult = result) }
+            } catch (e: Throwable) {
+                Log.w("MainViewModel", "runBacktestSimulation failure", e)
+            }
         }
     }
 
     private fun startAutoRefresh() {
         pollingJob?.cancel()
-        pollingJob = viewModelScope.launch {
-            if (_uiState.value.autoRefreshEnabled) {
-                repository?.refreshMarketData()
+        pollingJob = viewModelScope.launch(safeHandler) {
+            try {
+                if (_uiState.value.autoRefreshEnabled) {
+                    repository?.refreshMarketData()
+                }
+            } catch (e: Throwable) {
+                Log.w("MainViewModel", "startAutoRefresh initial fetch error", e)
             }
             while (isActive) {
                 delay(1000) // 1-second interval for real-time responsiveness
-                if (_uiState.value.autoRefreshEnabled) {
-                    repository?.refreshMarketData()
+                try {
+                    if (_uiState.value.autoRefreshEnabled) {
+                        repository?.refreshMarketData()
+                    }
+                } catch (e: Throwable) {
+                    Log.w("MainViewModel", "polling loop fetch error", e)
                 }
             }
         }
@@ -349,148 +411,152 @@ class MainViewModel(
     }
 
     private fun updateMarketAnalysis(quote: MarketQuote?, optionChain: OptionChain?) {
-        val candles = repository?.historicalCandles?.value ?: emptyList()
-        val isMarketHours = RiskManager.isWithinTradingHours()
+        try {
+            val candles = repository?.historicalCandles?.value ?: emptyList()
+            val isMarketHours = RiskManager.isWithinTradingHours()
 
-        if (quote == null || candles.isEmpty()) {
+            if (quote == null || candles.isEmpty()) {
+                _uiState.update {
+                    it.copy(
+                        quote = null,
+                        signal = TradingSignal.noTrade("Awaiting live market data."),
+                        normalOptionsSignal = NormalOptionsSignal.waitingForData(),
+                        smartMoneyActivity = null,
+                        smartMoneySignal = null,
+                        indicators = null,
+                        supportResistance = null,
+                        isMarketOpen = isMarketHours
+                    )
+                }
+                return
+            }
+
+            // Validate Market Quote
+            val quoteValidation = com.cloudscope.moneyprinter.data.validator.MarketDataValidator.validateQuote(quote, _uiState.value.quote)
+            val latencyMs = quoteValidation.latencyMs
+            val isStale = quoteValidation.isStale
+
+            val pdh = quote.high
+            val pdl = quote.low
+            val pdc = quote.close
+            val pcr = optionChain?.pcr ?: 1.05
+            val vix = repository?.latestVix?.value ?: 15.0
+
+            // Compute technical indicators
+            val indicators = IndicatorEngine.evaluateIndicators(
+                candles = candles,
+                pdh = pdh,
+                pdl = pdl,
+                pdc = pdc,
+                pcr = pcr,
+                vix = vix
+            )
+
+            // Compute Support & Resistance levels
+            val srLevels = IndicatorEngine.calculateSupportResistance(pdh, pdl, pdc)
+
+            // Compute Smart Money Activity on Spot & Futures
+            val futures = repository?.latestFuturesQuote?.value ?: _uiState.value.futuresQuote
+            val smartMoneyActivity = SmartMoneyDetector.analyzeSmartMoney(
+                spotQuote = quote,
+                futuresQuote = futures,
+                candles = candles,
+                vwap = indicators.vwap,
+                pdh = pdh,
+                pdl = pdl,
+                orbHigh = indicators.orbHigh,
+                orbLow = indicators.orbLow
+            )
+
+            // Compute Option Chain institutional confirmation
+            val optionsConfirmation = OptionsConfirmationEngine.confirmOptions(
+                spotPrice = quote.lastPrice,
+                optionChain = optionChain
+            )
+
+            // Generate Smart Money Options Signal (SMART MONEY BUY CE / SMART MONEY BUY PE / NO ACTIVITY)
+            val smartMoneySignal = SmartMoneySignalEngine.generateSignal(
+                spotQuote = quote,
+                smartMoneyActivity = smartMoneyActivity,
+                optionsDetails = optionsConfirmation,
+                optionChain = optionChain
+            )
+
+            // Evaluate Smart Money Signal Alerts (in-app notification, duplicate suppression, setup change)
+            evaluateSmartMoneySignalAlert(smartMoneySignal, quote)
+
+            // Generate Normal Options Signal (independent technical analysis & price action engine)
+            val normalOptionsSignal = NormalOptionsSignalEngine.generateSignal(
+                quote = quote,
+                candles = candles,
+                indicators = indicators,
+                optionChain = optionChain,
+                supportResistance = srLevels
+            )
+
+            // Evaluate Normal Options Signal Alerts
+            val normalAlert = alertEngine.evaluateNormalSignal(normalOptionsSignal, quote)
+            if (normalAlert != null) {
+                handleTriggeredAlerts(listOf(normalAlert))
+            }
+
+            // Detect Signal Conflict between Normal & Smart Money engines
+            val conflictState = com.cloudscope.moneyprinter.domain.signal.SignalConflictEngine.detectConflict(normalOptionsSignal, smartMoneySignal)
+            val conflictAlert = alertEngine.evaluateSignalConflict(conflictState, quote)
+            if (conflictAlert != null) {
+                handleTriggeredAlerts(listOf(conflictAlert))
+            }
+
+            // Generate signal
+            val rawSignal = SignalEngine.generateSignal(
+                quote = quote,
+                indicators = indicators,
+                optionChain = optionChain,
+                candleCount = candles.size,
+                isMarketHours = isMarketHours
+            )
+
+            // Enrich signal with empirical historical performance
+            val enrichedSignal = enrichSignalWithHistoricalStats(rawSignal)
+
+            // Evaluate Signal Outcome Tracking on existing open trades
+            trackOpenSignalOutcomes(quote, optionChain)
+
+            // Evaluate Cooldown & Auto-record new signals
+            recordSignalIfQualified(enrichedSignal, indicators)
+
+            // Evaluate Market Condition Alerts
+            val triggeredAlerts = alertEngine.evaluate(
+                quote = quote,
+                indicators = indicators,
+                signal = enrichedSignal,
+                candles = candles,
+                settings = _uiState.value.alertSettings
+            )
+            if (triggeredAlerts.isNotEmpty()) {
+                handleTriggeredAlerts(triggeredAlerts)
+            }
+
             _uiState.update {
                 it.copy(
-                    quote = null,
-                    signal = TradingSignal.noTrade("Awaiting live market data."),
-                    normalOptionsSignal = NormalOptionsSignal.waitingForData(),
-                    smartMoneyActivity = null,
-                    smartMoneySignal = null,
-                    indicators = null,
-                    supportResistance = null,
+                    quote = quote,
+                    futuresQuote = futures,
+                    signal = enrichedSignal,
+                    normalOptionsSignal = normalOptionsSignal,
+                    smartMoneyActivity = smartMoneyActivity,
+                    smartMoneySignal = smartMoneySignal,
+                    signalConflictState = conflictState,
+                    feedLatencyMs = latencyMs,
+                    isDataStale = isStale,
+                    validationReason = quoteValidation.reason,
+                    indicators = indicators,
+                    optionChain = optionChain,
+                    supportResistance = srLevels,
                     isMarketOpen = isMarketHours
                 )
             }
-            return
-        }
-
-        // Validate Market Quote
-        val quoteValidation = com.cloudscope.moneyprinter.data.validator.MarketDataValidator.validateQuote(quote, _uiState.value.quote)
-        val latencyMs = quoteValidation.latencyMs
-        val isStale = quoteValidation.isStale
-
-        val pdh = quote.high
-        val pdl = quote.low
-        val pdc = quote.close
-        val pcr = optionChain?.pcr ?: 1.05
-        val vix = repository?.latestVix?.value ?: 15.0
-
-        // Compute technical indicators
-        val indicators = IndicatorEngine.evaluateIndicators(
-            candles = candles,
-            pdh = pdh,
-            pdl = pdl,
-            pdc = pdc,
-            pcr = pcr,
-            vix = vix
-        )
-
-        // Compute Support & Resistance levels
-        val srLevels = IndicatorEngine.calculateSupportResistance(pdh, pdl, pdc)
-
-        // Compute Smart Money Activity on Spot & Futures
-        val futures = repository?.latestFuturesQuote?.value ?: _uiState.value.futuresQuote
-        val smartMoneyActivity = SmartMoneyDetector.analyzeSmartMoney(
-            spotQuote = quote,
-            futuresQuote = futures,
-            candles = candles,
-            vwap = indicators.vwap,
-            pdh = pdh,
-            pdl = pdl,
-            orbHigh = indicators.orbHigh,
-            orbLow = indicators.orbLow
-        )
-
-        // Compute Option Chain institutional confirmation
-        val optionsConfirmation = OptionsConfirmationEngine.confirmOptions(
-            spotPrice = quote.lastPrice,
-            optionChain = optionChain
-        )
-
-        // Generate Smart Money Options Signal (SMART MONEY BUY CE / SMART MONEY BUY PE / NO ACTIVITY)
-        val smartMoneySignal = SmartMoneySignalEngine.generateSignal(
-            spotQuote = quote,
-            smartMoneyActivity = smartMoneyActivity,
-            optionsDetails = optionsConfirmation,
-            optionChain = optionChain
-        )
-
-        // Evaluate Smart Money Signal Alerts (in-app notification, duplicate suppression, setup change)
-        evaluateSmartMoneySignalAlert(smartMoneySignal, quote)
-
-        // Generate Normal Options Signal (independent technical analysis & price action engine)
-        val normalOptionsSignal = NormalOptionsSignalEngine.generateSignal(
-            quote = quote,
-            candles = candles,
-            indicators = indicators,
-            optionChain = optionChain,
-            supportResistance = srLevels
-        )
-
-        // Evaluate Normal Options Signal Alerts
-        val normalAlert = alertEngine.evaluateNormalSignal(normalOptionsSignal, quote)
-        if (normalAlert != null) {
-            handleTriggeredAlerts(listOf(normalAlert))
-        }
-
-        // Detect Signal Conflict between Normal & Smart Money engines
-        val conflictState = com.cloudscope.moneyprinter.domain.signal.SignalConflictEngine.detectConflict(normalOptionsSignal, smartMoneySignal)
-        val conflictAlert = alertEngine.evaluateSignalConflict(conflictState, quote)
-        if (conflictAlert != null) {
-            handleTriggeredAlerts(listOf(conflictAlert))
-        }
-
-        // Generate signal
-        val rawSignal = SignalEngine.generateSignal(
-            quote = quote,
-            indicators = indicators,
-            optionChain = optionChain,
-            candleCount = candles.size,
-            isMarketHours = isMarketHours
-        )
-
-        // Enrich signal with empirical historical performance
-        val enrichedSignal = enrichSignalWithHistoricalStats(rawSignal)
-
-        // Evaluate Signal Outcome Tracking on existing open trades
-        trackOpenSignalOutcomes(quote, optionChain)
-
-        // Evaluate Cooldown & Auto-record new signals
-        recordSignalIfQualified(enrichedSignal, indicators)
-
-        // Evaluate Market Condition Alerts
-        val triggeredAlerts = alertEngine.evaluate(
-            quote = quote,
-            indicators = indicators,
-            signal = enrichedSignal,
-            candles = candles,
-            settings = _uiState.value.alertSettings
-        )
-        if (triggeredAlerts.isNotEmpty()) {
-            handleTriggeredAlerts(triggeredAlerts)
-        }
-
-        _uiState.update {
-            it.copy(
-                quote = quote,
-                futuresQuote = futures,
-                signal = enrichedSignal,
-                normalOptionsSignal = normalOptionsSignal,
-                smartMoneyActivity = smartMoneyActivity,
-                smartMoneySignal = smartMoneySignal,
-                signalConflictState = conflictState,
-                feedLatencyMs = latencyMs,
-                isDataStale = isStale,
-                validationReason = quoteValidation.reason,
-                indicators = indicators,
-                optionChain = optionChain,
-                supportResistance = srLevels,
-                isMarketOpen = isMarketHours
-            )
+        } catch (t: Throwable) {
+            Log.e("MainViewModel", "Safe error caught during updateMarketAnalysis", t)
         }
     }
 
@@ -527,26 +593,34 @@ class MainViewModel(
     private fun recordSignalIfQualified(signal: TradingSignal, indicators: TechnicalIndicators) {
         val repo = signalRepository ?: return
 
-        // Only record active BUY_CE or BUY_PE setups with >= 60% confidence
-        if (signal.action != SignalAction.BUY_CE && signal.action != SignalAction.BUY_PE) return
-        if (signal.confidencePercent < 60) return
+        try {
+            // Only record active BUY_CE or BUY_PE setups with >= 60% confidence
+            if (signal.action != SignalAction.BUY_CE && signal.action != SignalAction.BUY_PE) return
+            if (signal.confidencePercent < 60) return
 
-        val now = System.currentTimeMillis()
-        val cooldownMillis = 15 * 60 * 1000L // 15 minutes cooldown
+            val now = System.currentTimeMillis()
+            val cooldownMillis = 15 * 60 * 1000L // 15 minutes cooldown
 
-        val isCooldownActive = (now - lastRecordedSignalTime) < cooldownMillis &&
-                lastRecordedStrike == signal.recommendedStrike &&
-                lastRecordedAction == signal.action
+            val isCooldownActive = (now - lastRecordedSignalTime) < cooldownMillis &&
+                    lastRecordedStrike == signal.recommendedStrike &&
+                    lastRecordedAction == signal.action
 
-        if (!isCooldownActive) {
-            lastRecordedSignalTime = now
-            lastRecordedStrike = signal.recommendedStrike
-            lastRecordedAction = signal.action
+            if (!isCooldownActive) {
+                lastRecordedSignalTime = now
+                lastRecordedStrike = signal.recommendedStrike
+                lastRecordedAction = signal.action
 
-            val record = SignalOutcomeTracker.createRecordFromSignal(signal, indicators, isPaperTrade = false)
-            viewModelScope.launch {
-                repo.recordGeneratedSignal(record)
+                val record = SignalOutcomeTracker.createRecordFromSignal(signal, indicators, isPaperTrade = false)
+                viewModelScope.launch(safeHandler) {
+                    try {
+                        repo.recordGeneratedSignal(record)
+                    } catch (e: Throwable) {
+                        Log.w("MainViewModel", "Error saving generated signal", e)
+                    }
+                }
             }
+        } catch (t: Throwable) {
+            Log.e("MainViewModel", "recordSignalIfQualified error", t)
         }
     }
 
@@ -554,77 +628,93 @@ class MainViewModel(
         val repo = signalRepository ?: return
         val chain = optionChain ?: return
 
-        viewModelScope.launch {
-            val openSignals = repo.getOpenSignals()
-            for (signal in openSignals) {
-                // Find matching option quote
-                val row = chain.rows.find { it.strikePrice == signal.strikePrice }
-                val optContract = if (row != null) {
-                    if (signal.optionType == OptionType.CE) row.callContract else row.putContract
-                } else null
+        viewModelScope.launch(safeHandler) {
+            try {
+                val openSignals = repo.getOpenSignals()
+                for (signal in openSignals) {
+                    try {
+                        // Find matching option quote
+                        val row = chain.rows.find { it.strikePrice == signal.strikePrice }
+                        val optContract = if (row != null) {
+                            if (signal.optionType == OptionType.CE) row.callContract else row.putContract
+                        } else null
 
-                val ltp = optContract?.lastPrice ?: signal.entryPrice
-                val high = ltp
-                val low = ltp
+                        val ltp = optContract?.lastPrice ?: signal.entryPrice
+                        val high = ltp
+                        val low = ltp
 
-                val evaluated = SignalOutcomeTracker.evaluateSignal(
-                    record = signal,
-                    currentOptionLtp = ltp,
-                    candleHigh = high,
-                    candleLow = low,
-                    currentSpotPrice = quote.lastPrice,
-                    currentTimestamp = System.currentTimeMillis()
-                )
+                        val evaluated = SignalOutcomeTracker.evaluateSignal(
+                            record = signal,
+                            currentOptionLtp = ltp,
+                            candleHigh = high,
+                            candleLow = low,
+                            currentSpotPrice = quote.lastPrice,
+                            currentTimestamp = System.currentTimeMillis()
+                        )
 
-                if (evaluated != signal) {
-                    repo.updateSignalLifecycle(evaluated)
-                    if (signal.isPaperTrade) {
-                        paperManager?.refreshAccountState()
+                        if (evaluated != signal) {
+                            repo.updateSignalLifecycle(evaluated)
+                            if (signal.isPaperTrade) {
+                                paperManager?.refreshAccountState()
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        Log.w("MainViewModel", "Error evaluating signal ${signal.id}", e)
                     }
                 }
+            } catch (t: Throwable) {
+                Log.e("MainViewModel", "trackOpenSignalOutcomes error", t)
             }
         }
     }
 
     private fun refreshAccuracyData() {
         val repo = signalRepository ?: return
-        viewModelScope.launch {
-            val fromTimestamp = when (_uiState.value.selectedAccuracyPeriod) {
-                AccuracyPeriod.TODAY -> System.currentTimeMillis() - (24 * 60 * 60 * 1000L)
-                AccuracyPeriod.LAST_7_DAYS -> System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
-                AccuracyPeriod.LAST_30_DAYS -> System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000L)
-                AccuracyPeriod.LAST_90_DAYS -> System.currentTimeMillis() - (90 * 24 * 60 * 60 * 1000L)
-                AccuracyPeriod.ALL_TIME -> 0L
+        viewModelScope.launch(safeHandler) {
+            try {
+                val fromTimestamp = when (_uiState.value.selectedAccuracyPeriod) {
+                    AccuracyPeriod.TODAY -> System.currentTimeMillis() - (24 * 60 * 60 * 1000L)
+                    AccuracyPeriod.LAST_7_DAYS -> System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L)
+                    AccuracyPeriod.LAST_30_DAYS -> System.currentTimeMillis() - (30 * 24 * 60 * 60 * 1000L)
+                    AccuracyPeriod.LAST_90_DAYS -> System.currentTimeMillis() - (90 * 24 * 60 * 60 * 1000L)
+                    AccuracyPeriod.ALL_TIME -> 0L
+                }
+
+                val filtered = repo.getSignalsFiltered(
+                    fromTimestamp = fromTimestamp,
+                    optionFilter = _uiState.value.selectedOptionFilter,
+                    strategyFilter = _uiState.value.selectedStrategyFilter,
+                    paperTradesOnly = if (_uiState.value.paperTradingOnlyFilter) true else null
+                )
+
+                refreshAccuracyViews(filtered)
+            } catch (t: Throwable) {
+                Log.e("MainViewModel", "refreshAccuracyData error", t)
             }
-
-            val filtered = repo.getSignalsFiltered(
-                fromTimestamp = fromTimestamp,
-                optionFilter = _uiState.value.selectedOptionFilter,
-                strategyFilter = _uiState.value.selectedStrategyFilter,
-                paperTradesOnly = if (_uiState.value.paperTradingOnlyFilter) true else null
-            )
-
-            refreshAccuracyViews(filtered)
         }
     }
 
     private fun refreshAccuracyViews(signals: List<HistoricalSignalRecord>) {
-        val repo = signalRepository ?: return
-        val metrics = repo.computeAccuracyMetrics(signals)
-        val insights = StrategyImprovementEngine.generateInsights(signals)
-        val comparisons = StrategyImprovementEngine.compareStrategyVersions(signals)
-        val cohorts = StrategyImprovementEngine.evaluateStrategyCohorts(signals)
-        val auditReport = com.cloudscope.moneyprinter.domain.audit.ReconciliationAuditor.auditLedgerAndMetrics(signals, metrics)
+        try {
+            val repo = signalRepository ?: return
+            val metrics = repo.computeAccuracyMetrics(signals)
+            val insights = StrategyImprovementEngine.generateInsights(signals)
+            val comparisons = StrategyImprovementEngine.compareStrategyVersions(signals)
+            val cohorts = StrategyImprovementEngine.evaluateStrategyCohorts(signals)
+            val auditReport = com.cloudscope.moneyprinter.domain.audit.ReconciliationAuditor.auditLedgerAndMetrics(signals, metrics)
 
-        _uiState.update {
-            it.copy(
-                historicalSignals = signals,
-                accuracyMetrics = metrics,
-                strategyInsights = insights,
-                strategyComparisons = comparisons,
-                strategyCohortMetrics = cohorts,
-                reconciliationReport = auditReport
-            )
+            _uiState.update {
+                it.copy(
+                    historicalSignals = signals,
+                    accuracyMetrics = metrics,
+                    strategyInsights = insights,
+                    strategyComparisons = comparisons,
+                    strategyCohortMetrics = cohorts,
+                    reconciliationReport = auditReport
+                )
+            }
+        } catch (t: Throwable) {
+            Log.e("MainViewModel", "refreshAccuracyViews error", t)
         }
     }
 
@@ -706,31 +796,46 @@ class MainViewModel(
     // Real-Time Notification & Alert Controls
     // ----------------------------------------------------
     private fun handleTriggeredAlerts(newAlerts: List<MarketAlert>) {
-        val settings = _uiState.value.alertSettings
-        for (alert in newAlerts) {
-            notificationDispatcher?.dispatchAlert(alert, settings)
-        }
+        try {
+            val settings = _uiState.value.alertSettings
+            for (alert in newAlerts) {
+                try {
+                    notificationDispatcher?.dispatchAlert(alert, settings)
+                } catch (t: Throwable) {
+                    Log.w("MainViewModel", "Alert dispatch failure", t)
+                }
+            }
 
-        val currentList = _uiState.value.alerts.toMutableList()
-        currentList.addAll(0, newAlerts)
-        val trimmed = currentList.take(100)
-        val unread = trimmed.count { !it.isRead }
-        val latest = newAlerts.lastOrNull()
+            val currentList = _uiState.value.alerts.toMutableList()
+            currentList.addAll(0, newAlerts)
+            val trimmed = currentList.take(100)
+            val unread = trimmed.count { !it.isRead }
+            val latest = newAlerts.lastOrNull()
 
-        _uiState.update {
-            it.copy(
-                alerts = trimmed,
-                unreadAlertCount = unread,
-                activeInAppAlert = latest
-            )
-        }
+            _uiState.update {
+                it.copy(
+                    alerts = trimmed,
+                    unreadAlertCount = unread,
+                    activeInAppAlert = latest
+                )
+            }
 
-        alertPreferences?.saveAlertHistory(trimmed)
+            try {
+                alertPreferences?.saveAlertHistory(trimmed)
+            } catch (t: Throwable) {
+                Log.w("MainViewModel", "saveAlertHistory failure", t)
+            }
 
-        inAppAlertDismissJob?.cancel()
-        inAppAlertDismissJob = viewModelScope.launch {
-            delay(6000L) // Auto-dismiss banner after 6 seconds
-            _uiState.update { it.copy(activeInAppAlert = null) }
+            inAppAlertDismissJob?.cancel()
+            inAppAlertDismissJob = viewModelScope.launch(safeHandler) {
+                try {
+                    delay(6000L) // Auto-dismiss banner after 6 seconds
+                    _uiState.update { it.copy(activeInAppAlert = null) }
+                } catch (_: Throwable) {
+                }
+            }
+        } catch (t: Throwable) {
+            Log.e("MainViewModel", "handleTriggeredAlerts error", t)
         }
     }
 
