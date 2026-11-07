@@ -4,16 +4,22 @@ import com.cloudscope.moneyprinter.data.model.MarketQuote
 import com.cloudscope.moneyprinter.data.model.OptionChain
 import com.cloudscope.moneyprinter.data.model.OptionType
 import com.cloudscope.moneyprinter.domain.options.ContractSpecificationService
+import com.cloudscope.moneyprinter.domain.options.ExpiryCalculator
 import com.cloudscope.moneyprinter.domain.options.OptionsSelector
 import com.cloudscope.moneyprinter.domain.signal.ChargesCalculator
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import kotlin.math.max
 
 object SmartMoneySignalEngine {
 
+    private val istTimeZone = TimeZone.getTimeZone("Asia/Kolkata")
+
     /**
-     * Generates directional options trading signals (BUY CE / BUY PE / NO TRADE)
-     * based on multi-factor Smart Money Spot & Futures detection verified with Option Chain data.
+     * Generates directional options trading signals (SMART MONEY BUY CE / SMART MONEY BUY PE / NO ACTIVITY)
+     * based on multi-factor Potential Smart Money Spot & Futures detection verified with Option Chain data.
      * Enforces the rule: Never generate CE/PE signals based on RSI or VWAP alone.
      */
     fun generateSignal(
@@ -22,17 +28,23 @@ object SmartMoneySignalEngine {
         optionsDetails: OptionConfirmationDetails,
         optionChain: OptionChain?
     ): SmartMoneySignal {
+        val detectionTimeStr = formatTimeToIst(spotQuote.timestamp)
+        val expiryDate = optionChain?.expiryDates?.firstOrNull { it.isNotBlank() }
+            ?: ExpiryCalculator.resolveNearestExpiry("NIFTY", spotQuote.timestamp)
+
         // 1. Missing Option Chain Check
         if (!optionsDetails.isAvailable || optionChain == null || optionChain.rows.isEmpty()) {
             return SmartMoneySignal(
                 action = SmartMoneySignalAction.NO_TRADE,
                 confidence = SmartMoneyConfidence.LOW,
                 suggestedStrike = "—",
+                expiryDate = expiryDate,
                 entryZone = "—",
                 stopLoss = "—",
                 target1 = "—",
                 target2 = "—",
-                shortReason = "Option-chain confirmation unavailable: live option data required for safe entry.",
+                shortReason = "Potential Smart Money Activity: Option-chain confirmation unavailable. Live option premium required for safe entry.",
+                detectionTime = detectionTimeStr,
                 optionConfirmationAvailable = false,
                 smartMoneyActivity = smartMoneyActivity,
                 optionConfirmationDetails = optionsDetails
@@ -42,11 +54,15 @@ object SmartMoneySignalEngine {
         // 2. Conflicting Signals Check
         val spotBullish = smartMoneyActivity.spotPrice >= smartMoneyActivity.vwap ||
                 smartMoneyActivity.vwapState == VwapRelationship.RECLAIM ||
-                smartMoneyActivity.marketStructure == MarketStructureState.BULLISH_STRUCTURE
+                smartMoneyActivity.marketStructure == MarketStructureState.BULLISH_STRUCTURE ||
+                smartMoneyActivity.chochState == ChochState.BULLISH_CHOCH ||
+                smartMoneyActivity.orderBlock == OrderBlockState.BULLISH_ORDER_BLOCK
 
         val spotBearish = smartMoneyActivity.spotPrice <= smartMoneyActivity.vwap ||
                 smartMoneyActivity.vwapState == VwapRelationship.REJECTION ||
-                smartMoneyActivity.marketStructure == MarketStructureState.BEARISH_STRUCTURE
+                smartMoneyActivity.marketStructure == MarketStructureState.BEARISH_STRUCTURE ||
+                smartMoneyActivity.chochState == ChochState.BEARISH_CHOCH ||
+                smartMoneyActivity.orderBlock == OrderBlockState.BEARISH_ORDER_BLOCK
 
         // Conflict: Spot indicates UP but Options indicate heavy Call Writing (resistance) or Futures indicate Short Buildup
         if (spotBullish && (optionsDetails.atmCeBuildup == OptionBuildupType.SHORT_BUILDUP ||
@@ -54,22 +70,24 @@ object SmartMoneySignalEngine {
                     optionsDetails.pcr < 0.85)
         ) {
             val conflictReason = if (optionsDetails.atmCeBuildup == OptionBuildupType.SHORT_BUILDUP) {
-                "Conflicting signals: Spot bullish near VWAP but Option Chain reveals heavy Call Writing resistance at ${optionsDetails.atmStrike.toInt()} CE."
+                "Conflicting signals: Potential Smart Money Activity conflict - Spot bullish near VWAP but Option Chain reveals heavy Call Writing resistance at ${optionsDetails.atmStrike.toInt()} CE."
             } else if (smartMoneyActivity.priceOiRegime == PriceOiRegime.SHORT_BUILDUP) {
-                "Conflicting signals: Spot bounce opposes NIFTY Futures Short Buildup (${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% OI addition)."
+                "Conflicting signals: Potential Smart Money Activity conflict - Spot bounce opposes NIFTY Futures Short Buildup (${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% OI addition)."
             } else {
-                "Conflicting signals: Low PCR (${String.format(Locale.US, "%.2f", optionsDetails.pcr)}) indicates strong Call writing resistance overhead."
+                "Conflicting signals: Potential Smart Money Activity conflict - Low PCR (${String.format(Locale.US, "%.2f", optionsDetails.pcr)}) indicates strong Call writing resistance overhead."
             }
 
             return SmartMoneySignal(
                 action = SmartMoneySignalAction.NO_TRADE,
                 confidence = SmartMoneyConfidence.LOW,
                 suggestedStrike = "—",
+                expiryDate = expiryDate,
                 entryZone = "—",
                 stopLoss = "—",
                 target1 = "—",
                 target2 = "—",
                 shortReason = conflictReason,
+                detectionTime = detectionTimeStr,
                 smartMoneyActivity = smartMoneyActivity,
                 optionConfirmationDetails = optionsDetails
             )
@@ -81,22 +99,24 @@ object SmartMoneySignalEngine {
                     optionsDetails.pcr > 1.25)
         ) {
             val conflictReason = if (optionsDetails.atmPeBuildup == OptionBuildupType.SHORT_BUILDUP) {
-                "Conflicting signals: Spot bearish near VWAP but Option Chain reveals heavy Put Writing support floor at ${optionsDetails.atmStrike.toInt()} PE."
+                "Conflicting signals: Potential Smart Money Activity conflict - Spot bearish near VWAP but Option Chain reveals heavy Put Writing support floor at ${optionsDetails.atmStrike.toInt()} PE."
             } else if (smartMoneyActivity.priceOiRegime == PriceOiRegime.LONG_BUILDUP) {
-                "Conflicting signals: Spot dip opposes NIFTY Futures Long Buildup (+${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% fresh longs)."
+                "Conflicting signals: Potential Smart Money Activity conflict - Spot dip opposes NIFTY Futures Long Buildup (+${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% fresh longs)."
             } else {
-                "Conflicting signals: High PCR (${String.format(Locale.US, "%.2f", optionsDetails.pcr)}) indicates strong Put writing support underneath."
+                "Conflicting signals: Potential Smart Money Activity conflict - High PCR (${String.format(Locale.US, "%.2f", optionsDetails.pcr)}) indicates strong Put writing support underneath."
             }
 
             return SmartMoneySignal(
                 action = SmartMoneySignalAction.NO_TRADE,
                 confidence = SmartMoneyConfidence.LOW,
                 suggestedStrike = "—",
+                expiryDate = expiryDate,
                 entryZone = "—",
                 stopLoss = "—",
                 target1 = "—",
                 target2 = "—",
                 shortReason = conflictReason,
+                detectionTime = detectionTimeStr,
                 smartMoneyActivity = smartMoneyActivity,
                 optionConfirmationDetails = optionsDetails
             )
@@ -105,33 +125,38 @@ object SmartMoneySignalEngine {
         // 3. Sideways Market Check
         if (smartMoneyActivity.marketStructure == MarketStructureState.RANGEBOUND &&
             smartMoneyActivity.liquiditySweep == LiquiditySweepState.NONE &&
+            smartMoneyActivity.chochState == ChochState.NONE &&
+            smartMoneyActivity.orderBlock == OrderBlockState.NONE &&
             !smartMoneyActivity.isUnusualVolume
         ) {
             return SmartMoneySignal(
                 action = SmartMoneySignalAction.NO_TRADE,
                 confidence = SmartMoneyConfidence.LOW,
                 suggestedStrike = "—",
+                expiryDate = expiryDate,
                 entryZone = "—",
                 stopLoss = "—",
                 target1 = "—",
                 target2 = "—",
-                shortReason = "Sideways market: NIFTY rangebound without clear structure breakout or institutional volume. Awaiting edge.",
+                shortReason = "Potential Smart Money Activity: Sideways consolidation without structural breakout, order blocks, or institutional volume. Awaiting edge.",
+                detectionTime = detectionTimeStr,
                 smartMoneyActivity = smartMoneyActivity,
                 optionConfirmationDetails = optionsDetails
             )
         }
 
         // 4. BUY CE (Strong Bullish Confirmation)
-        // Multi-factor requirements: Spot above/reclaiming VWAP + Bullish structure/Sweep + Futures Long Buildup/Short Covering + Option Chain confirmation
         val isBullishSmartMoney = (smartMoneyActivity.spotPrice >= smartMoneyActivity.vwap || smartMoneyActivity.vwapState == VwapRelationship.RECLAIM) &&
-                (smartMoneyActivity.marketStructure == MarketStructureState.BULLISH_STRUCTURE || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BULLISH_SWEEP) &&
+                (smartMoneyActivity.marketStructure == MarketStructureState.BULLISH_STRUCTURE ||
+                        smartMoneyActivity.liquiditySweep == LiquiditySweepState.BULLISH_SWEEP ||
+                        smartMoneyActivity.chochState == ChochState.BULLISH_CHOCH ||
+                        smartMoneyActivity.orderBlock == OrderBlockState.BULLISH_ORDER_BLOCK) &&
                 (smartMoneyActivity.priceOiRegime == PriceOiRegime.LONG_BUILDUP || smartMoneyActivity.priceOiRegime == PriceOiRegime.SHORT_COVERING)
 
         if (isBullishSmartMoney && optionsDetails.isBullishConfirmed) {
             val atmStrike = optionsDetails.atmStrike
             val itmStrike = atmStrike - 50.0
 
-            // Suggest ATM or 1-step ITM (prefer 1-step ITM for higher delta & theta buffer if spot is running)
             val suggestedStrikePrice = if (smartMoneyActivity.spotPrice > atmStrike + 15.0) itmStrike else atmStrike
             val strikeLabel = if (suggestedStrikePrice == itmStrike) {
                 "${suggestedStrikePrice.toInt()} CE (1-step ITM)"
@@ -139,7 +164,6 @@ object SmartMoneySignalEngine {
                 "${suggestedStrikePrice.toInt()} CE (ATM)"
             }
 
-            // Retrieve actual option contract from option chain
             val row = optionChain.rows.find { it.strikePrice == suggestedStrikePrice } ?: optionChain.rows.find { it.strikePrice == atmStrike }
             val contract = row?.callContract
 
@@ -163,13 +187,16 @@ object SmartMoneySignalEngine {
 
                 val isStrong = (smartMoneyActivity.marketStructure == MarketStructureState.BULLISH_STRUCTURE &&
                         smartMoneyActivity.priceOiRegime == PriceOiRegime.LONG_BUILDUP &&
-                        (smartMoneyActivity.isUnusualVolume || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BULLISH_SWEEP))
+                        (smartMoneyActivity.isUnusualVolume || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BULLISH_SWEEP || smartMoneyActivity.orderBlock == OrderBlockState.BULLISH_ORDER_BLOCK))
 
                 val confidence = if (isStrong) SmartMoneyConfidence.STRONG else SmartMoneyConfidence.MODERATE
 
                 val shortReason = buildString {
+                    append("Potential Smart Money Activity: ")
                     append(smartMoneyActivity.marketStructure.displayName)
                     if (smartMoneyActivity.vwapState == VwapRelationship.RECLAIM) append(" + VWAP Reclaim")
+                    if (smartMoneyActivity.orderBlock == OrderBlockState.BULLISH_ORDER_BLOCK) append(" + Demand Order Block")
+                    if (smartMoneyActivity.chochState == ChochState.BULLISH_CHOCH) append(" + Bullish CHoCH")
                     append(" confirmed by Futures ${smartMoneyActivity.priceOiRegime.displayName}")
                     if (smartMoneyActivity.futuresOiChangePercent != 0.0) {
                         append(" (${if (smartMoneyActivity.futuresOiChangePercent > 0) "+" else ""}${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% OI)")
@@ -183,6 +210,7 @@ object SmartMoneySignalEngine {
                     suggestedStrike = strikeLabel,
                     strikePrice = suggestedStrikePrice,
                     optionType = OptionType.CE,
+                    expiryDate = expiryDate,
                     entryZone = entryZone,
                     entryPrice = entryPrice,
                     stopLoss = "₹${formatPrice(slPrice)}",
@@ -195,6 +223,7 @@ object SmartMoneySignalEngine {
                     riskRewardRatio = 1.5,
                     netRiskRewardRatio = netRr,
                     estimatedCharges = estCharges,
+                    detectionTime = detectionTimeStr,
                     smartMoneyActivity = smartMoneyActivity,
                     optionConfirmationDetails = optionsDetails
                 )
@@ -202,16 +231,17 @@ object SmartMoneySignalEngine {
         }
 
         // 5. BUY PE (Strong Bearish Confirmation)
-        // Multi-factor requirements: Spot below/rejecting VWAP + Bearish structure/Sweep + Futures Short Buildup/Long Unwinding + Option Chain confirmation
         val isBearishSmartMoney = (smartMoneyActivity.spotPrice <= smartMoneyActivity.vwap || smartMoneyActivity.vwapState == VwapRelationship.REJECTION) &&
-                (smartMoneyActivity.marketStructure == MarketStructureState.BEARISH_STRUCTURE || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BEARISH_SWEEP) &&
+                (smartMoneyActivity.marketStructure == MarketStructureState.BEARISH_STRUCTURE ||
+                        smartMoneyActivity.liquiditySweep == LiquiditySweepState.BEARISH_SWEEP ||
+                        smartMoneyActivity.chochState == ChochState.BEARISH_CHOCH ||
+                        smartMoneyActivity.orderBlock == OrderBlockState.BEARISH_ORDER_BLOCK) &&
                 (smartMoneyActivity.priceOiRegime == PriceOiRegime.SHORT_BUILDUP || smartMoneyActivity.priceOiRegime == PriceOiRegime.LONG_UNWINDING)
 
         if (isBearishSmartMoney && optionsDetails.isBearishConfirmed) {
             val atmStrike = optionsDetails.atmStrike
             val itmStrike = atmStrike + 50.0
 
-            // Suggest ATM or 1-step ITM (prefer 1-step ITM for higher delta & theta buffer if spot is dropping)
             val suggestedStrikePrice = if (smartMoneyActivity.spotPrice < atmStrike - 15.0) itmStrike else atmStrike
             val strikeLabel = if (suggestedStrikePrice == itmStrike) {
                 "${suggestedStrikePrice.toInt()} PE (1-step ITM)"
@@ -219,7 +249,6 @@ object SmartMoneySignalEngine {
                 "${suggestedStrikePrice.toInt()} PE (ATM)"
             }
 
-            // Retrieve actual option contract from option chain
             val row = optionChain.rows.find { it.strikePrice == suggestedStrikePrice } ?: optionChain.rows.find { it.strikePrice == atmStrike }
             val contract = row?.putContract
 
@@ -243,13 +272,16 @@ object SmartMoneySignalEngine {
 
                 val isStrong = (smartMoneyActivity.marketStructure == MarketStructureState.BEARISH_STRUCTURE &&
                         smartMoneyActivity.priceOiRegime == PriceOiRegime.SHORT_BUILDUP &&
-                        (smartMoneyActivity.isUnusualVolume || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BEARISH_SWEEP))
+                        (smartMoneyActivity.isUnusualVolume || smartMoneyActivity.liquiditySweep == LiquiditySweepState.BEARISH_SWEEP || smartMoneyActivity.orderBlock == OrderBlockState.BEARISH_ORDER_BLOCK))
 
                 val confidence = if (isStrong) SmartMoneyConfidence.STRONG else SmartMoneyConfidence.MODERATE
 
                 val shortReason = buildString {
+                    append("Potential Smart Money Activity: ")
                     append(smartMoneyActivity.marketStructure.displayName)
                     if (smartMoneyActivity.vwapState == VwapRelationship.REJECTION) append(" + VWAP Rejection")
+                    if (smartMoneyActivity.orderBlock == OrderBlockState.BEARISH_ORDER_BLOCK) append(" + Supply Order Block")
+                    if (smartMoneyActivity.chochState == ChochState.BEARISH_CHOCH) append(" + Bearish CHoCH")
                     append(" confirmed by Futures ${smartMoneyActivity.priceOiRegime.displayName}")
                     if (smartMoneyActivity.futuresOiChangePercent != 0.0) {
                         append(" (${if (smartMoneyActivity.futuresOiChangePercent > 0) "+" else ""}${String.format(Locale.US, "%.1f", smartMoneyActivity.futuresOiChangePercent)}% OI)")
@@ -263,6 +295,7 @@ object SmartMoneySignalEngine {
                     suggestedStrike = strikeLabel,
                     strikePrice = suggestedStrikePrice,
                     optionType = OptionType.PE,
+                    expiryDate = expiryDate,
                     entryZone = entryZone,
                     entryPrice = entryPrice,
                     stopLoss = "₹${formatPrice(slPrice)}",
@@ -275,13 +308,14 @@ object SmartMoneySignalEngine {
                     riskRewardRatio = 1.5,
                     netRiskRewardRatio = netRr,
                     estimatedCharges = estCharges,
+                    detectionTime = detectionTimeStr,
                     smartMoneyActivity = smartMoneyActivity,
                     optionConfirmationDetails = optionsDetails
                 )
             }
         }
 
-        // 6. Insufficient confirmation (e.g. RSI or VWAP alone, without full Smart Money + Option Chain confluence)
+        // 6. Insufficient confirmation
         val missingDetails = mutableListOf<String>()
         if (!optionsDetails.isBullishConfirmed && !optionsDetails.isBearishConfirmed) {
             missingDetails.add("Option Chain OI/PCR confirmation pending")
@@ -294,20 +328,22 @@ object SmartMoneySignalEngine {
         }
 
         val missingMsg = if (missingDetails.isNotEmpty()) {
-            "Insufficient confirmation: ${missingDetails.joinToString(", ")}. Rule: Do not trade on VWAP or RSI alone."
+            "Potential Smart Money Activity: Insufficient confirmation (${missingDetails.joinToString(", ")}). Rule: Never trade on VWAP or RSI alone."
         } else {
-            "Insufficient smart money confluence. Standby until high-probability setup aligns."
+            "Potential Smart Money Activity: Insufficient institutional confluence. Standby until high-probability setup aligns."
         }
 
         return SmartMoneySignal(
             action = SmartMoneySignalAction.NO_TRADE,
             confidence = SmartMoneyConfidence.LOW,
             suggestedStrike = "—",
+            expiryDate = expiryDate,
             entryZone = "—",
             stopLoss = "—",
             target1 = "—",
             target2 = "—",
             shortReason = missingMsg,
+            detectionTime = detectionTimeStr,
             smartMoneyActivity = smartMoneyActivity,
             optionConfirmationDetails = optionsDetails
         )
@@ -315,5 +351,12 @@ object SmartMoneySignalEngine {
 
     private fun formatPrice(price: Double): String {
         return String.format(Locale.US, "%.2f", price)
+    }
+
+    private fun formatTimeToIst(epochMillis: Long): String {
+        val sdf = SimpleDateFormat("hh:mm a 'IST'", Locale.ENGLISH).apply {
+            timeZone = istTimeZone
+        }
+        return sdf.format(Date(epochMillis))
     }
 }

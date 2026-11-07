@@ -17,9 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneyConfidence
-import com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignal
-import com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction
+import com.cloudscope.moneyprinter.domain.smartmoney.*
 import com.cloudscope.moneyprinter.ui.theme.LocalTerminalColors
 
 @Composable
@@ -79,9 +77,9 @@ fun SmartMoneyOptionsSignalCard(
                         .padding(horizontal = 8.dp, vertical = 3.dp)
                 ) {
                     Text(
-                        text = "NIFTY OPTIONS RADAR",
+                        text = "POTENTIAL INSTITUTIONAL FLOW",
                         color = colors.textMuted,
-                        fontSize = 10.5.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.5.sp
                     )
@@ -96,7 +94,7 @@ fun SmartMoneyOptionsSignalCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Signal Badge (BUY CE / BUY PE / NO TRADE)
+                // Signal Badge (SMART MONEY BUY CE / SMART MONEY BUY PE / NO ACTIVITY)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -107,18 +105,18 @@ fun SmartMoneyOptionsSignalCard(
                     Text(
                         text = action.displayName,
                         color = actionColor,
-                        fontSize = 20.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 0.5.sp
                     )
                 }
 
-                // Confidence Badge
+                // Confidence / Strength Badge
                 val (confColor, confBg, confLabel) = when {
-                    action == SmartMoneySignalAction.NO_TRADE -> Triple(colors.textMuted, colors.surface, "Confidence: —")
-                    confidence == SmartMoneyConfidence.STRONG -> Triple(colors.bullish, colors.bullishBg, "Confidence: Strong")
-                    confidence == SmartMoneyConfidence.MODERATE -> Triple(colors.sideways, colors.sidewaysBg, "Confidence: Moderate")
-                    else -> Triple(colors.textMuted, colors.surface, "Confidence: Low")
+                    action == SmartMoneySignalAction.NO_TRADE -> Triple(colors.textMuted, colors.surface, "Strength: Low")
+                    confidence == SmartMoneyConfidence.STRONG -> Triple(colors.bullish, colors.bullishBg, "Strength: Strong")
+                    confidence == SmartMoneyConfidence.MODERATE -> Triple(colors.sideways, colors.sidewaysBg, "Strength: Moderate")
+                    else -> Triple(colors.textMuted, colors.surface, "Strength: Low")
                 }
 
                 Box(
@@ -131,48 +129,63 @@ fun SmartMoneyOptionsSignalCard(
                     Text(
                         text = confLabel,
                         color = confColor,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             // Trade Parameters Section
             if (action != SmartMoneySignalAction.NO_TRADE && signal != null) {
-                // Row 1: Suggested Strike & Entry Zone
+                // Row 1: Suggested Strike & Expiry Date
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     TradeParamBox(
                         title = "SUGGESTED STRIKE",
                         value = signal.suggestedStrike,
                         valueColor = actionColor,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1.1f)
                     )
                     TradeParamBox(
-                        title = "ENTRY ZONE",
-                        value = signal.entryZone,
+                        title = "EXPIRY",
+                        value = signal.expiryDate,
                         valueColor = colors.textPrimary,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(0.9f)
                     )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Row 2: Stop Loss & Targets
+                // Row 2: Entry Premium & Stop Loss
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    TradeParamBox(
+                        title = "ENTRY PREMIUM",
+                        value = signal.entryZone,
+                        valueColor = colors.textPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
                     TradeParamBox(
                         title = "STOP LOSS",
                         value = signal.stopLoss,
                         valueColor = colors.bearish,
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Row 3: Target 1, Target 2 & Detection Time
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     TradeParamBox(
                         title = "TARGET 1",
                         value = signal.target1,
@@ -184,6 +197,12 @@ fun SmartMoneyOptionsSignalCard(
                         value = signal.target2,
                         valueColor = colors.bullish,
                         modifier = Modifier.weight(1f)
+                    )
+                    TradeParamBox(
+                        title = "DETECTION TIME",
+                        value = signal.detectionTime,
+                        valueColor = colors.textMuted,
+                        modifier = Modifier.weight(1.1f)
                     )
                 }
 
@@ -203,7 +222,7 @@ fun SmartMoneyOptionsSignalCard(
                     }
                 }
             } else {
-                // Standby / No Trade Placeholder Grid
+                // Standby / No Activity Grid
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -215,37 +234,66 @@ fun SmartMoneyOptionsSignalCard(
                         modifier = Modifier.weight(1f)
                     )
                     TradeParamBox(
-                        title = "ENTRY ZONE",
-                        value = "—",
+                        title = "EXPIRY",
+                        value = signal?.expiryDate ?: "—",
                         valueColor = colors.textMuted,
                         modifier = Modifier.weight(1f)
                     )
                     TradeParamBox(
-                        title = "STOP LOSS",
-                        value = "—",
+                        title = "DETECTION TIME",
+                        value = signal?.detectionTime ?: "—",
                         valueColor = colors.textMuted,
-                        modifier = Modifier.weight(0.9f)
-                    )
-                    TradeParamBox(
-                        title = "TARGET 1 & 2",
-                        value = "—",
-                        valueColor = colors.textMuted,
-                        modifier = Modifier.weight(0.9f)
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            // Institutional Structure Tags (CHoCH, BOS, Order Block, Liquidity Sweep)
+            signal?.smartMoneyActivity?.let { act ->
+                val chips = mutableListOf<String>()
+                if (act.chochState != ChochState.NONE) chips.add(act.chochState.displayName)
+                if (act.bosState != BosState.NONE) chips.add(act.bosState.displayName)
+                if (act.orderBlock != OrderBlockState.NONE) chips.add(act.orderBlock.displayName)
+                if (act.liquiditySweep != LiquiditySweepState.NONE) chips.add(act.liquiditySweep.displayName)
+                if (act.isUnusualVolume) chips.add("Unusual Volume (${act.volumeRatio}x)")
 
-            // Short Reason for Signal
-            val reasonText = signal?.shortReason ?: "Awaiting live market data & institutional confirmation."
+                if (chips.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        chips.take(3).forEach { chip ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(colors.surface)
+                                    .border(1.dp, colors.border.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 7.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = chip,
+                                    color = colors.textSecondary,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Short Reason / Explanation
+            val reasonText = signal?.shortReason ?: "Potential Smart Money Activity: Awaiting live market data & institutional confirmation."
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .background(colors.surface)
                     .border(1.dp, colors.border.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .padding(12.dp)
+                .padding(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.Top) {
                     Icon(
@@ -259,9 +307,9 @@ fun SmartMoneyOptionsSignalCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "SIGNAL REASON",
+                            text = "POTENTIAL SMART MONEY EXPLANATION",
                             color = colors.textMuted,
-                            fontSize = 10.5.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 0.5.sp
                         )
@@ -269,8 +317,8 @@ fun SmartMoneyOptionsSignalCard(
                         Text(
                             text = reasonText,
                             color = colors.textPrimary,
-                            fontSize = 13.5.sp,
-                            lineHeight = 18.5.sp,
+                            fontSize = 12.5.sp,
+                            lineHeight = 17.5.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -299,15 +347,15 @@ private fun TradeParamBox(
             Text(
                 text = title,
                 color = colors.textMuted,
-                fontSize = 10.sp,
+                fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 0.4.sp
+                letterSpacing = 0.3.sp
             )
             Spacer(modifier = Modifier.height(3.dp))
             Text(
                 text = value,
                 color = valueColor,
-                fontSize = 13.5.sp,
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.Bold
             )
         }

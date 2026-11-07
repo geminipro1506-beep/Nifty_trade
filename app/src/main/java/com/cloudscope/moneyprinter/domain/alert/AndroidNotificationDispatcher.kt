@@ -110,13 +110,22 @@ class AndroidNotificationDispatcher(private val context: Context) {
                 MarketAlertType.CONFIDENCE_INCREASE,
                 MarketAlertType.VWAP_BREAKOUT,
                 MarketAlertType.EMA_BULLISH_CROSS,
-                MarketAlertType.MACD_BULLISH_CROSS -> ToneGenerator.TONE_PROP_ACK
+                MarketAlertType.MACD_BULLISH_CROSS,
+                MarketAlertType.NORMAL_BUY_CE,
+                MarketAlertType.SMART_MONEY_BUY_CE,
+                MarketAlertType.BULLISH_NEWS -> ToneGenerator.TONE_PROP_ACK
 
                 MarketAlertType.DIRECTION_BEARISH,
                 MarketAlertType.CONFIDENCE_DECREASE,
                 MarketAlertType.VWAP_BREAKDOWN,
                 MarketAlertType.EMA_BEARISH_CROSS,
-                MarketAlertType.MACD_BEARISH_CROSS -> ToneGenerator.TONE_PROP_NACK
+                MarketAlertType.MACD_BEARISH_CROSS,
+                MarketAlertType.NORMAL_BUY_PE,
+                MarketAlertType.SMART_MONEY_BUY_PE,
+                MarketAlertType.BEARISH_NEWS -> ToneGenerator.TONE_PROP_NACK
+
+                MarketAlertType.SIGNAL_CONFLICT,
+                MarketAlertType.MARKET_DATA_DISCONNECTED -> ToneGenerator.TONE_PROP_BEEP2
 
                 MarketAlertType.VOLUME_SURGE,
                 MarketAlertType.VIX_SPIKE -> ToneGenerator.TONE_PROP_BEEP2

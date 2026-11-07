@@ -71,7 +71,7 @@ class SmartMoneyAlertTest {
         val alert = alertEngine.evaluateSmartMoneySignal(signal, quote)
 
         assertNotNull("Alert must be triggered when a valid BUY CE signal appears", alert)
-        assertEquals(MarketAlertType.DIRECTION_BULLISH, alert?.type)
+        assertEquals(MarketAlertType.SMART_MONEY_BUY_CE, alert?.type)
         assertEquals(MarketDirection.BULLISH, alert?.newDirection)
         assertTrue("Title should include SMART MONEY and strike", alert?.title?.contains("SMART MONEY") == true)
         assertTrue("Title should mention BUY CE", alert?.title?.contains("BUY CE") == true)
@@ -97,7 +97,7 @@ class SmartMoneyAlertTest {
         val alert = alertEngine.evaluateSmartMoneySignal(signal, quote)
 
         assertNotNull("Alert must be triggered when a valid BUY PE signal appears", alert)
-        assertEquals(MarketAlertType.DIRECTION_BEARISH, alert?.type)
+        assertEquals(MarketAlertType.SMART_MONEY_BUY_PE, alert?.type)
         assertEquals(MarketDirection.BEARISH, alert?.newDirection)
         assertTrue(alert?.title?.contains("BUY PE") == true)
         assertTrue(alert?.message?.contains("Entry: ₹135.00 - ₹140.00") == true)
@@ -131,7 +131,7 @@ class SmartMoneyAlertTest {
         val signal2 = createSignal(SmartMoneySignalAction.BUY_PE, strike = "24850 PE (ATM)")
         val alert2 = alertEngine.evaluateSmartMoneySignal(signal2, quote, now = now + 30000L)
         assertNotNull("Must alert when directional signal changes to BUY PE", alert2)
-        assertEquals(MarketAlertType.DIRECTION_BEARISH, alert2?.type)
+        assertEquals(MarketAlertType.SMART_MONEY_BUY_PE, alert2?.type)
 
         // 2. New setup forms (strike changes from 24850 PE to 24800 PE): immediately alerts!
         val signal3 = createSignal(SmartMoneySignalAction.BUY_PE, strike = "24800 PE (1-step ITM)")

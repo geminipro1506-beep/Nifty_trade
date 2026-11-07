@@ -10,7 +10,7 @@ import kotlin.math.min
 object SmartMoneyDetector {
 
     /**
-     * Analyzes NIFTY Spot and NIFTY Futures for institutional smart money activity.
+     * Analyzes NIFTY Spot and NIFTY Futures for potential institutional smart money activity.
      */
     fun analyzeSmartMoney(
         spotQuote: MarketQuote,
@@ -34,10 +34,13 @@ object SmartMoneyDetector {
         // 3. Liquidity Sweep Detection
         val liquiditySweep = detectLiquiditySweep(candles, pdh, pdl, orbHigh, orbLow)
 
-        // 4. Bullish / Bearish Market Structure
-        val marketStructure = detectMarketStructure(candles, spotPrice)
+        // 4. Bullish / Bearish Market Structure, CHoCH, and BOS
+        val (marketStructure, chochState, bosState) = detectStructureChochBos(candles, spotPrice)
 
-        // 5. Futures Open Interest changes & Price / OI confirmation
+        // 5. Order Block Detection
+        val orderBlock = detectOrderBlock(candles, spotPrice)
+
+        // 6. Futures Open Interest changes & Price / OI confirmation
         val futPrice = futuresQuote?.lastPrice ?: (spotPrice + 35.0)
         val futChange = futuresQuote?.change ?: spotQuote.change
 
@@ -56,9 +59,19 @@ object SmartMoneyDetector {
         val priceOiRegime = determinePriceOiRegime(futChange, futOiChange)
 
         val summary = buildString {
+            append("Potential Smart Money Activity: ")
             append(priceOiRegime.displayName)
             append(" • ")
             append(marketStructure.displayName)
+            if (chochState != ChochState.NONE) {
+                append(" • ${chochState.displayName}")
+            }
+            if (bosState != BosState.NONE) {
+                append(" • ${bosState.displayName}")
+            }
+            if (orderBlock != OrderBlockState.NONE) {
+                append(" • ${orderBlock.displayName}")
+            }
             if (isUnusualVolume) {
                 append(" • Unusual Vol (${String.format(java.util.Locale.US, "%.1fx", volumeRatio)})")
             }
@@ -76,6 +89,9 @@ object SmartMoneyDetector {
             vwapState = vwapState,
             liquiditySweep = liquiditySweep,
             marketStructure = marketStructure,
+            orderBlock = orderBlock,
+            chochState = chochState,
+            bosState = bosState,
             futuresPrice = futPrice,
             futuresOi = currentOi,
             futuresOiChange = futOiChange,
@@ -115,14 +131,12 @@ object SmartMoneyDetector {
         val lastCandle = candles.lastOrNull()
         val prevCandle = if (candles.size >= 2) candles[candles.size - 2] else null
 
-        // Reclaim: Currently above VWAP, but previous candle or recent low tested/dipped below VWAP
         if (spotPrice > vwap) {
             val dippedBelow = (lastCandle != null && lastCandle.low < vwap) ||
                     (prevCandle != null && prevCandle.close <= vwap)
             return if (dippedBelow) VwapRelationship.RECLAIM else VwapRelationship.ABOVE_VWAP
         }
 
-        // Rejection: Currently below VWAP, but previous candle or recent high probed above VWAP
         if (spotPrice < vwap) {
             val spikedAbove = (lastCandle != null && lastCandle.high > vwap) ||
                     (prevCandle != null && prevCandle.close >= vwap)
@@ -141,7 +155,6 @@ object SmartMoneyDetector {
     ): LiquiditySweepState {
         if (candles.isEmpty()) return LiquiditySweepState.NONE
 
-        // Look at the latest 3 candles for a sweep and reject pattern
         val evaluationCandles = candles.takeLast(3)
 
         val supportLevels = listOfNotNull(
@@ -158,7 +171,6 @@ object SmartMoneyDetector {
             val range = candle.high - candle.low
             if (range <= 0.0) continue
 
-            // Bullish sweep: low dips below key support, but closes back above or leaves a heavy lower wick (>= 35% of range)
             for (sup in supportLevels) {
                 if (candle.low < sup) {
                     val lowerWick = min(candle.open, candle.close) - candle.low
@@ -169,7 +181,6 @@ object SmartMoneyDetector {
                 }
             }
 
-            // Bearish sweep: high spikes above key resistance, but closes back below or leaves a heavy upper wick (>= 35% of range)
             for (res in resistanceLevels) {
                 if (candle.high > res) {
                     val upperWick = candle.high - max(candle.open, candle.close)
@@ -184,13 +195,14 @@ object SmartMoneyDetector {
         return LiquiditySweepState.NONE
     }
 
-    private fun detectMarketStructure(
+    private fun detectStructureChochBos(
         candles: List<HistoricalCandle>,
         spotPrice: Double
-    ): MarketStructureState {
-        if (candles.size < 5) return MarketStructureState.RANGEBOUND
+    ): Triple<MarketStructureState, ChochState, BosState> {
+        if (candles.size < 5) {
+            return Triple(MarketStructureState.RANGEBOUND, ChochState.NONE, BosState.NONE)
+        }
 
-        // Identify local swing highs and swing lows (3-candle fractal pivots)
         val swingHighs = mutableListOf<Double>()
         val swingLows = mutableListOf<Double>()
 
@@ -199,48 +211,110 @@ object SmartMoneyDetector {
             val prev = candles[i - 1]
             val next = candles[i + 1]
 
-            if (curr.high > prev.high && curr.high >= next.high) {
+            // Swing high: either a standard pivot high OR a pullback bounce peak in a downtrend
+            val isStandardSwingHigh = curr.high >= prev.high && curr.high >= next.high
+            val isPullbackSwingHigh = curr.close > curr.open && curr.high >= next.high && next.low < curr.low
+            if (isStandardSwingHigh || isPullbackSwingHigh) {
                 swingHighs.add(curr.high)
             }
-            if (curr.low < prev.low && curr.low <= next.low) {
+
+            // Swing low: either a standard pivot low OR a pullback trough in an uptrend
+            val isStandardSwingLow = curr.low <= prev.low && curr.low <= next.low
+            val isPullbackSwingLow = curr.close < curr.open && curr.low <= next.low && next.high > curr.high
+            if (isStandardSwingLow || isPullbackSwingLow) {
                 swingLows.add(curr.low)
             }
         }
 
-        val lastSwingHigh = swingHighs.lastOrNull()
-        val prevSwingHigh = if (swingHighs.size >= 2) swingHighs[swingHighs.size - 2] else null
+        val priorCandles = candles.dropLast(1)
+        val lastHigh = swingHighs.lastOrNull() ?: priorCandles.map { it.high }.takeLast(3).maxOrNull()
+        val prevHigh = if (swingHighs.size >= 2) swingHighs[swingHighs.size - 2] else null
+        val lastLow = swingLows.lastOrNull() ?: priorCandles.map { it.low }.takeLast(3).minOrNull()
+        val prevLow = if (swingLows.size >= 2) swingLows[swingLows.size - 2] else null
 
-        val lastSwingLow = swingLows.lastOrNull()
-        val prevSwingLow = if (swingLows.size >= 2) swingLows[swingLows.size - 2] else null
+        var structure = MarketStructureState.RANGEBOUND
+        var choch = ChochState.NONE
+        var bos = BosState.NONE
 
-        // Break of Structure (BOS)
-        if (lastSwingHigh != null && spotPrice > lastSwingHigh) {
-            return MarketStructureState.BULLISH_STRUCTURE
+        val isOverallDown = priorCandles.isNotEmpty() && (priorCandles.first().close > priorCandles.last().close)
+        val isOverallUp = priorCandles.isNotEmpty() && (priorCandles.first().close < priorCandles.last().close)
+
+        val isPriorDowntrend = isOverallDown ||
+                (lastHigh != null && prevHigh != null && lastHigh < prevHigh) ||
+                (lastLow != null && prevLow != null && lastLow < prevLow)
+
+        val isPriorUptrend = isOverallUp ||
+                (lastHigh != null && prevHigh != null && lastHigh > prevHigh) ||
+                (lastLow != null && prevLow != null && lastLow > prevLow)
+
+        // CHoCH (Change of Character): Trend reversal breaking opposing swing point
+        if (isPriorDowntrend && !isOverallUp && lastHigh != null && spotPrice > lastHigh) {
+            choch = ChochState.BULLISH_CHOCH
+            structure = MarketStructureState.BULLISH_STRUCTURE
+        } else if (isPriorUptrend && !isOverallDown && lastLow != null && spotPrice < lastLow) {
+            choch = ChochState.BEARISH_CHOCH
+            structure = MarketStructureState.BEARISH_STRUCTURE
         }
-        if (lastSwingLow != null && spotPrice < lastSwingLow) {
-            return MarketStructureState.BEARISH_STRUCTURE
+
+        // BOS (Break of Structure): Trend continuation breaking in trend direction
+        if (isPriorUptrend && lastHigh != null && spotPrice > lastHigh) {
+            bos = BosState.BULLISH_BOS
+            structure = MarketStructureState.BULLISH_STRUCTURE
+        } else if (isPriorDowntrend && lastLow != null && spotPrice < lastLow) {
+            bos = BosState.BEARISH_BOS
+            structure = MarketStructureState.BEARISH_STRUCTURE
         }
 
-        // Higher Highs & Higher Lows
-        if (lastSwingHigh != null && prevSwingHigh != null && lastSwingHigh > prevSwingHigh &&
-            lastSwingLow != null && prevSwingLow != null && lastSwingLow > prevSwingLow
-        ) {
-            return MarketStructureState.BULLISH_STRUCTURE
+        if (structure == MarketStructureState.RANGEBOUND) {
+            if (lastHigh != null && spotPrice > lastHigh) {
+                structure = MarketStructureState.BULLISH_STRUCTURE
+                bos = BosState.BULLISH_BOS
+            } else if (lastLow != null && spotPrice < lastLow) {
+                structure = MarketStructureState.BEARISH_STRUCTURE
+                bos = BosState.BEARISH_BOS
+            } else if (lastHigh != null && prevHigh != null && lastHigh > prevHigh && lastLow != null && prevLow != null && lastLow > prevLow) {
+                structure = MarketStructureState.BULLISH_STRUCTURE
+            } else if (lastHigh != null && prevHigh != null && lastHigh < prevHigh && lastLow != null && prevLow != null && lastLow < prevLow) {
+                structure = MarketStructureState.BEARISH_STRUCTURE
+            }
         }
 
-        // Lower Highs & Lower Lows
-        if (lastSwingHigh != null && prevSwingHigh != null && lastSwingHigh < prevSwingHigh &&
-            lastSwingLow != null && prevSwingLow != null && lastSwingLow < prevSwingLow
-        ) {
-            return MarketStructureState.BEARISH_STRUCTURE
+        return Triple(structure, choch, bos)
+    }
+
+    private fun detectOrderBlock(
+        candles: List<HistoricalCandle>,
+        spotPrice: Double
+    ): OrderBlockState {
+        if (candles.size < 4) return OrderBlockState.NONE
+
+        val recent = candles.takeLast(6)
+        for (i in 0 until recent.size - 2) {
+            val c1 = recent[i]
+            val c2 = recent[i + 1]
+            val c3 = recent[i + 2]
+
+            // Bullish Order Block: down candle followed by sharp impulsive up move
+            val isBearishCandle = c1.close < c1.open
+            val isImpulsiveUp = c2.close > c2.open && c3.close > c3.open && (c3.close - c1.high) > 20.0
+            if (isBearishCandle && isImpulsiveUp && spotPrice >= c1.low && spotPrice <= (c1.high + 15.0)) {
+                return OrderBlockState.BULLISH_ORDER_BLOCK
+            }
+
+            // Bearish Order Block: up candle followed by sharp impulsive down selloff
+            val isBullishCandle = c1.close > c1.open
+            val isImpulsiveDown = c2.close < c2.open && c3.close < c3.open && (c1.low - c3.close) > 20.0
+            if (isBullishCandle && isImpulsiveDown && spotPrice <= c1.high && spotPrice >= (c1.low - 15.0)) {
+                return OrderBlockState.BEARISH_ORDER_BLOCK
+            }
         }
 
-        return MarketStructureState.RANGEBOUND
+        return OrderBlockState.NONE
     }
 
     private fun determinePriceOiRegime(priceChange: Double, oiChange: Long): PriceOiRegime {
-        val oiThreshold = 10000L // Minimum institutional contract OI change
-        val priceThreshold = 3.0 // Minimum spot/futures move in points
+        val oiThreshold = 10000L
+        val priceThreshold = 3.0
 
         return when {
             priceChange >= priceThreshold && oiChange >= oiThreshold -> PriceOiRegime.LONG_BUILDUP

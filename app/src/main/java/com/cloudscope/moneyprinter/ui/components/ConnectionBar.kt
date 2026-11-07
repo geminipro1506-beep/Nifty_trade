@@ -36,10 +36,10 @@ fun ConnectionBar(
 ) {
     val colors = LocalTerminalColors.current
 
-    val (statusLabel, statusColor) = when (state.status) {
-        ConnectionStatus.LIVE -> Pair("LIVE", colors.bullish)
-        ConnectionStatus.DELAYED -> Pair("DELAYED", colors.sideways)
-        ConnectionStatus.DATA_UNAVAILABLE -> Pair("DATA UNAVAILABLE", colors.bearish)
+    val (statusLabel, statusColor, statusEmoji) = when (state.status) {
+        ConnectionStatus.LIVE -> Triple("LIVE", colors.bullish, "🟢")
+        ConnectionStatus.DELAYED -> Triple("DELAYED", colors.sideways, "🟠")
+        ConnectionStatus.DATA_UNAVAILABLE -> Triple("DISCONNECTED", colors.bearish, "🔴")
     }
 
     val brokerShortName = when (state.brokerType) {
@@ -49,7 +49,9 @@ fun ConnectionBar(
         BrokerType.ZERODHA -> "Zerodha Kite"
     }
 
-    val timeFormatter = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    val timeFormatter = SimpleDateFormat("hh:mm:ss a 'IST'", Locale.ENGLISH).apply {
+        timeZone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+    }
     val timeText = if (state.lastUpdated > 0) timeFormatter.format(Date(state.lastUpdated)) else "--:--:--"
 
     Row(
@@ -76,7 +78,7 @@ fun ConnectionBar(
             Spacer(modifier = Modifier.width(8.dp))
 
             Text(
-                text = statusLabel,
+                text = "$statusEmoji $statusLabel",
                 color = statusColor,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -85,7 +87,7 @@ fun ConnectionBar(
             )
 
             Text(
-                text = " • $brokerShortName • $timeText",
+                text = " • $brokerShortName • Tick: $timeText",
                 color = colors.textMuted,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace

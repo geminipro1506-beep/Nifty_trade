@@ -34,6 +34,20 @@ class MarketAlertEngine {
     var lastSmartMoneyTime: Long = 0L
         private set
 
+    // Normal Options alert state tracking
+    var lastNormalAction: com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction = com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.NO_TRADE
+        private set
+    var lastNormalStrike: Double = 0.0
+        private set
+    var lastNormalTime: Long = 0L
+        private set
+
+    // Signal conflict state tracking
+    var lastConflictState: Boolean = false
+        private set
+    var lastConflictTime: Long = 0L
+        private set
+
     // Cooldown tracking per alert type (timestamp in ms)
     private val lastAlertTimeByType = mutableMapOf<MarketAlertType, Long>()
 
@@ -50,6 +64,11 @@ class MarketAlertEngine {
         lastSmartMoneyAction = com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.NO_TRADE
         lastSmartMoneyStrike = ""
         lastSmartMoneyTime = 0L
+        lastNormalAction = com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.NO_TRADE
+        lastNormalStrike = 0.0
+        lastNormalTime = 0L
+        lastConflictState = false
+        lastConflictTime = 0L
         lastAlertTimeByType.clear()
     }
 
@@ -415,7 +434,7 @@ class MarketAlertEngine {
 
             val isCe = action == com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneySignalAction.BUY_CE
             val emoji = if (isCe) "🟢" else "🔴"
-            val alertType = if (isCe) MarketAlertType.DIRECTION_BULLISH else MarketAlertType.DIRECTION_BEARISH
+            val alertType = if (isCe) MarketAlertType.SMART_MONEY_BUY_CE else MarketAlertType.SMART_MONEY_BUY_PE
 
             return MarketAlert(
                 type = alertType,
@@ -425,6 +444,143 @@ class MarketAlertEngine {
                 spotPrice = quote.lastPrice,
                 newDirection = if (isCe) MarketDirection.BULLISH else MarketDirection.BEARISH,
                 newConfidence = if (smartMoneySignal.confidence == com.cloudscope.moneyprinter.domain.smartmoney.SmartMoneyConfidence.STRONG) 85 else 70
+            )
+        }
+        return null
+    }
+
+    /**
+     * Evaluates Normal Options Signal changes with duplicate suppression and cooldown.
+     */
+    fun evaluateNormalSignal(
+        normalSignal: com.cloudscope.moneyprinter.domain.normaloptions.NormalOptionsSignal?,
+        quote: MarketQuote,
+        now: Long = System.currentTimeMillis()
+    ): MarketAlert? {
+        if (normalSignal == null || normalSignal.action == com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.NO_TRADE ||
+            normalSignal.action == com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.WAITING_FOR_DATA
+        ) {
+            if (lastNormalAction != com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.NO_TRADE) {
+                lastNormalAction = com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.NO_TRADE
+                lastNormalStrike = 0.0
+            }
+            return null
+        }
+
+        val action = normalSignal.action
+        val strike = normalSignal.suggestedStrike ?: 0.0
+        val cooldownMillis = 5 * 60 * 1000L
+
+        val isSignalChanged = action != lastNormalAction
+        val isNewStrike = strike > 0.0 && strike != lastNormalStrike
+        val isCooldownExpired = (now - lastNormalTime) > cooldownMillis
+
+        if (isSignalChanged || isNewStrike || isCooldownExpired) {
+            lastNormalAction = action
+            lastNormalStrike = strike
+            lastNormalTime = now
+
+            val isCall = action == com.cloudscope.moneyprinter.domain.normaloptions.NormalSignalAction.BUY_CALL
+            val emoji = if (isCall) "🟢" else "🔴"
+            val alertType = if (isCall) MarketAlertType.NORMAL_BUY_CE else MarketAlertType.NORMAL_BUY_PE
+            val strikeLabel = if (strike > 0.0) "${strike.toInt()} ${if (isCall) "CE" else "PE"}" else "ATM"
+
+            return MarketAlert(
+                type = alertType,
+                title = "$emoji NORMAL OPTIONS: ${action.displayName} ($strikeLabel)",
+                message = "${normalSignal.signalReason} • Entry: ₹${formatPrice(normalSignal.entryPrice)} • SL: ₹${formatPrice(normalSignal.stopLoss)} • T1: ₹${formatPrice(normalSignal.target1)} (${normalSignal.confidencePercent}% Confidence)",
+                timestamp = now,
+                spotPrice = quote.lastPrice,
+                newDirection = if (isCall) MarketDirection.BULLISH else MarketDirection.BEARISH,
+                newConfidence = normalSignal.confidencePercent
+            )
+        }
+        return null
+    }
+
+    /**
+     * Evaluates Signal Conflict between Normal and Smart Money engines.
+     */
+    fun evaluateSignalConflict(
+        conflictState: com.cloudscope.moneyprinter.domain.signal.SignalConflictState,
+        quote: MarketQuote,
+        now: Long = System.currentTimeMillis()
+    ): MarketAlert? {
+        if (!conflictState.hasConflict) {
+            lastConflictState = false
+            return null
+        }
+
+        val cooldownMillis = 5 * 60 * 1000L
+        if (!lastConflictState || (now - lastConflictTime) > cooldownMillis) {
+            lastConflictState = true
+            lastConflictTime = now
+
+            return MarketAlert(
+                type = MarketAlertType.SIGNAL_CONFLICT,
+                title = "⚠️ SIGNAL CONFLICT DETECTED",
+                message = conflictState.conflictReason,
+                timestamp = now,
+                spotPrice = quote.lastPrice
+            )
+        }
+        return null
+    }
+
+    /**
+     * Evaluates high-impact news items and generates an alert for market-moving events.
+     */
+    fun evaluateHighImpactNews(
+        article: com.cloudscope.moneyprinter.domain.news.MarketNewsArticle,
+        quote: MarketQuote,
+        now: Long = System.currentTimeMillis()
+    ): MarketAlert? {
+        if (article.impact != com.cloudscope.moneyprinter.domain.news.NewsImpactLevel.HIGH) return null
+
+        val isBullish = article.sentiment == com.cloudscope.moneyprinter.domain.news.NewsSentiment.POSITIVE
+        val isBearish = article.sentiment == com.cloudscope.moneyprinter.domain.news.NewsSentiment.NEGATIVE
+        if (!isBullish && !isBearish) return null
+
+        val alertType = if (isBullish) MarketAlertType.BULLISH_NEWS else MarketAlertType.BEARISH_NEWS
+        val cooldownMillis = 15 * 60 * 1000L
+        val lastTime = lastAlertTimeByType[alertType] ?: 0L
+
+        if ((now - lastTime) > cooldownMillis) {
+            lastAlertTimeByType[alertType] = now
+            val emoji = if (isBullish) "🟢" else "🔴"
+            return MarketAlert(
+                type = alertType,
+                title = "$emoji ${alertType.label}: ${article.source}",
+                message = article.displayHeadline,
+                timestamp = now,
+                spotPrice = quote.lastPrice
+            )
+        }
+        return null
+    }
+
+    /**
+     * Evaluates market data disconnection.
+     */
+    fun evaluateDisconnection(
+        isDisconnected: Boolean,
+        spotPrice: Double,
+        now: Long = System.currentTimeMillis()
+    ): MarketAlert? {
+        if (!isDisconnected) return null
+
+        val alertType = MarketAlertType.MARKET_DATA_DISCONNECTED
+        val cooldownMillis = 5 * 60 * 1000L
+        val lastTime = lastAlertTimeByType[alertType] ?: 0L
+
+        if ((now - lastTime) > cooldownMillis) {
+            lastAlertTimeByType[alertType] = now
+            return MarketAlert(
+                type = alertType,
+                title = "🔴 Market Data Disconnected",
+                message = "Live exchange stream interrupted. Checking network and reconnecting automatically.",
+                timestamp = now,
+                spotPrice = spotPrice
             )
         }
         return null

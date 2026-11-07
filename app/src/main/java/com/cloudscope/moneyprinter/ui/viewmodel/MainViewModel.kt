@@ -62,6 +62,8 @@ class MainViewModel(
     private var inAppAlertDismissJob: Job? = null
     private val alertEngine = MarketAlertEngine()
     private val paperManager: PaperTradingManager? = signalRepository?.let { PaperTradingManager(it) }
+    private val marketNewsService = com.cloudscope.moneyprinter.domain.news.MarketNewsService()
+    private var newsJob: Job? = null
 
     // Signal generation cooldown tracking (15 min cooldown for identical strike)
     private var lastRecordedSignalTime: Long = 0L
@@ -125,6 +127,7 @@ class MainViewModel(
         // Initial fetch
         refreshMarketData()
         refreshAccuracyData()
+        startNewsMonitoring()
         viewModelScope.launch {
             paperManager?.refreshAccountState()
         }
@@ -305,11 +308,40 @@ class MainViewModel(
     private fun startAutoRefresh() {
         pollingJob?.cancel()
         pollingJob = viewModelScope.launch {
+            if (_uiState.value.autoRefreshEnabled) {
+                repository?.refreshMarketData()
+            }
             while (isActive) {
-                delay(3000) // 3 second polling interval for snappy realtime data
+                delay(1000) // 1-second interval for real-time responsiveness
                 if (_uiState.value.autoRefreshEnabled) {
                     repository?.refreshMarketData()
                 }
+            }
+        }
+    }
+
+    private fun startNewsMonitoring() {
+        newsJob?.cancel()
+        newsJob = viewModelScope.launch {
+            while (isActive) {
+                runCatching {
+                    val articles = marketNewsService.getLatestMarketNews()
+                    if (articles.isNotEmpty()) {
+                        _uiState.update { it.copy(marketNews = articles) }
+                        val quote = _uiState.value.quote
+                            ?: MarketQuote(symbol = "NIFTY 50", lastPrice = 24850.0, change = 0.0, pChange = 0.0, open = 24800.0, high = 24900.0, low = 24750.0, close = 24800.0)
+                        val highImpact = articles.firstOrNull { it.impact == com.cloudscope.moneyprinter.domain.news.NewsImpactLevel.HIGH }
+                        if (highImpact != null) {
+                            val alert = alertEngine.evaluateHighImpactNews(highImpact, quote)
+                            if (alert != null) {
+                                handleTriggeredAlerts(listOf(alert))
+                            }
+                        }
+                    }
+                }.onFailure {
+                    // Safe isolated news handling
+                }
+                delay(60000L)
             }
         }
     }
@@ -333,6 +365,11 @@ class MainViewModel(
             }
             return
         }
+
+        // Validate Market Quote
+        val quoteValidation = com.cloudscope.moneyprinter.data.validator.MarketDataValidator.validateQuote(quote, _uiState.value.quote)
+        val latencyMs = quoteValidation.latencyMs
+        val isStale = quoteValidation.isStale
 
         val pdh = quote.high
         val pdl = quote.low
@@ -372,7 +409,7 @@ class MainViewModel(
             optionChain = optionChain
         )
 
-        // Generate Smart Money Options Signal (BUY CE / BUY PE / NO TRADE)
+        // Generate Smart Money Options Signal (SMART MONEY BUY CE / SMART MONEY BUY PE / NO ACTIVITY)
         val smartMoneySignal = SmartMoneySignalEngine.generateSignal(
             spotQuote = quote,
             smartMoneyActivity = smartMoneyActivity,
@@ -391,6 +428,19 @@ class MainViewModel(
             optionChain = optionChain,
             supportResistance = srLevels
         )
+
+        // Evaluate Normal Options Signal Alerts
+        val normalAlert = alertEngine.evaluateNormalSignal(normalOptionsSignal, quote)
+        if (normalAlert != null) {
+            handleTriggeredAlerts(listOf(normalAlert))
+        }
+
+        // Detect Signal Conflict between Normal & Smart Money engines
+        val conflictState = com.cloudscope.moneyprinter.domain.signal.SignalConflictEngine.detectConflict(normalOptionsSignal, smartMoneySignal)
+        val conflictAlert = alertEngine.evaluateSignalConflict(conflictState, quote)
+        if (conflictAlert != null) {
+            handleTriggeredAlerts(listOf(conflictAlert))
+        }
 
         // Generate signal
         val rawSignal = SignalEngine.generateSignal(
@@ -430,6 +480,10 @@ class MainViewModel(
                 normalOptionsSignal = normalOptionsSignal,
                 smartMoneyActivity = smartMoneyActivity,
                 smartMoneySignal = smartMoneySignal,
+                signalConflictState = conflictState,
+                feedLatencyMs = latencyMs,
+                isDataStale = isStale,
+                validationReason = quoteValidation.reason,
                 indicators = indicators,
                 optionChain = optionChain,
                 supportResistance = srLevels,

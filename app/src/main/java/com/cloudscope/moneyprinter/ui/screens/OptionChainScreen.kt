@@ -124,7 +124,8 @@ fun OptionChainScreen(
         // ==========================================
         // 2. EXPIRY SELECTION CHIPS
         // ==========================================
-        val expiries = optionChain?.expiryDates ?: listOf("07 NOV 2024", "14 NOV 2024", "28 NOV 2024")
+        val expiries = optionChain?.expiryDates?.filter { it.isNotBlank() }?.takeIf { it.isNotEmpty() }
+            ?: com.cloudscope.moneyprinter.domain.options.ExpiryCalculator.calculateUpcomingExpiries().allExpiries
         Row(
             modifier = Modifier
                 .fillMaxWidth()

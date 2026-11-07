@@ -54,6 +54,13 @@ fun InAppAlertBanner(
             AlertCategory.CONFIDENCE -> colors.accentBlue
             AlertCategory.TECHNICAL -> colors.bullish
             AlertCategory.VOLATILITY -> colors.sideways
+            AlertCategory.OPTIONS_SIGNAL -> when {
+                alert.title.contains("BUY CE", ignoreCase = true) || alert.title.contains("BUY CALL", ignoreCase = true) -> colors.bullish
+                alert.title.contains("BUY PE", ignoreCase = true) || alert.title.contains("BUY PUT", ignoreCase = true) -> colors.bearish
+                else -> colors.sideways
+            }
+            AlertCategory.MARKET_NEWS -> if (alert.title.contains("BULLISH", ignoreCase = true)) colors.bullish else colors.bearish
+            AlertCategory.SYSTEM -> colors.bearish
         }
 
         val timeFormat = remember {

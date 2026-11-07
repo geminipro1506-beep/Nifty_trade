@@ -419,7 +419,8 @@ class MarketDataRepositoryImpl(
     }
 
     private fun buildOptionChain(spot: Double) {
-        val expiryInfo = com.cloudscope.moneyprinter.domain.options.ExpiryCalculator.calculateUpcomingExpiries()
+        val quoteTime = _latestQuote.value?.timestamp ?: System.currentTimeMillis()
+        val expiryInfo = com.cloudscope.moneyprinter.domain.options.ExpiryCalculator.calculateUpcomingExpiries(quoteTime)
         val atmStrike = OptionsSelector.roundToStrikeStep(spot)
         val strikes = (-7..7).map { atmStrike + (it * 50.0) }
 

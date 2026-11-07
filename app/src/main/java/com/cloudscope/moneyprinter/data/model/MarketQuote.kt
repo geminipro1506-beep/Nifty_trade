@@ -78,7 +78,7 @@ data class OptionChain(
     val timestamp: Long = System.currentTimeMillis(),
     val highestCallOiStrike: Double = 0.0,
     val highestPutOiStrike: Double = 0.0,
-    val expiryDates: List<String> = listOf("07 NOV 2024", "14 NOV 2024", "28 NOV 2024")
+    val expiryDates: List<String> = emptyList()
 ) {
     fun getEffectiveCallResistanceStrike(): Double {
         return if (highestCallOiStrike > 0) highestCallOiStrike else (rows.maxByOrNull { it.callContract?.openInterest ?: 0L }?.strikePrice ?: (atmStrike + 150.0))

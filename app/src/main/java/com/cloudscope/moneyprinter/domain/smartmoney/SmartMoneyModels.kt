@@ -3,9 +3,9 @@ package com.cloudscope.moneyprinter.domain.smartmoney
 import com.cloudscope.moneyprinter.data.model.OptionType
 
 enum class SmartMoneySignalAction(val displayName: String) {
-    BUY_CE("BUY CE"),
-    BUY_PE("BUY PE"),
-    NO_TRADE("NO TRADE")
+    BUY_CE("SMART MONEY BUY CE"),
+    BUY_PE("SMART MONEY BUY PE"),
+    NO_TRADE("NO ACTIVITY")
 }
 
 enum class SmartMoneyConfidence(val displayName: String) {
@@ -26,6 +26,24 @@ enum class MarketStructureState(val displayName: String) {
     BULLISH_STRUCTURE("Bullish Structure (HH/HL / Bullish BOS)"),
     BEARISH_STRUCTURE("Bearish Structure (LH/LL / Bearish BOS)"),
     RANGEBOUND("Rangebound Consolidation")
+}
+
+enum class OrderBlockState(val displayName: String) {
+    BULLISH_ORDER_BLOCK("Bullish Order Block (Demand Base)"),
+    BEARISH_ORDER_BLOCK("Bearish Order Block (Supply Base)"),
+    NONE("No Order Block")
+}
+
+enum class ChochState(val displayName: String) {
+    BULLISH_CHOCH("Bullish CHoCH (Change of Character)"),
+    BEARISH_CHOCH("Bearish CHoCH (Change of Character)"),
+    NONE("No CHoCH")
+}
+
+enum class BosState(val displayName: String) {
+    BULLISH_BOS("Bullish BOS (Break of Structure)"),
+    BEARISH_BOS("Bearish BOS (Break of Structure)"),
+    NONE("No BOS")
 }
 
 enum class VwapRelationship(val displayName: String) {
@@ -59,6 +77,9 @@ data class SmartMoneyActivity(
     val vwapState: VwapRelationship,
     val liquiditySweep: LiquiditySweepState,
     val marketStructure: MarketStructureState,
+    val orderBlock: OrderBlockState = OrderBlockState.NONE,
+    val chochState: ChochState = ChochState.NONE,
+    val bosState: BosState = BosState.NONE,
     val futuresPrice: Double,
     val futuresOi: Long,
     val futuresOiChange: Long,
@@ -91,6 +112,7 @@ data class SmartMoneySignal(
     val suggestedStrike: String,
     val strikePrice: Double = 0.0,
     val optionType: OptionType? = null,
+    val expiryDate: String = "—",
     val entryZone: String,
     val entryPrice: Double = 0.0,
     val stopLoss: String,
@@ -104,6 +126,7 @@ data class SmartMoneySignal(
     val netRiskRewardRatio: Double = 0.0,
     val estimatedCharges: Double = 55.0,
     val timestamp: Long = System.currentTimeMillis(),
+    val detectionTime: String = "—",
     val optionConfirmationAvailable: Boolean = true,
     val smartMoneyActivity: SmartMoneyActivity? = null,
     val optionConfirmationDetails: OptionConfirmationDetails? = null

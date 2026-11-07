@@ -34,7 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cloudscope.moneyprinter.data.model.MarketDirection
+import com.cloudscope.moneyprinter.ui.components.LatestMarketNewsCard
 import com.cloudscope.moneyprinter.ui.components.NormalOptionsSignalCard
+import com.cloudscope.moneyprinter.ui.components.SignalConflictBanner
 import com.cloudscope.moneyprinter.ui.components.SmartMoneyOptionsSignalCard
 import com.cloudscope.moneyprinter.ui.components.alerts.AlertsPanelDialog
 import com.cloudscope.moneyprinter.ui.components.alerts.InAppAlertBanner
@@ -525,17 +527,31 @@ fun HomeScreen(
                 }
 
                 // ==========================================
-                // 3. NORMAL OPTIONS SIGNAL (NEW)
+                // SIGNAL CONFLICT BANNER (IF DETECTED)
+                // ==========================================
+                SignalConflictBanner(
+                    conflictState = uiState.signalConflictState
+                )
+
+                // ==========================================
+                // 3. NORMAL OPTIONS SIGNAL (TECHNICAL ANALYSIS & PRICE ACTION)
                 // ==========================================
                 NormalOptionsSignalCard(
                     signal = uiState.normalOptionsSignal
                 )
 
                 // ==========================================
-                // 4. SMART MONEY OPTIONS SIGNAL (EXISTING)
+                // 4. SMART MONEY OPTIONS SIGNAL (INSTITUTIONAL ORDER FLOW)
                 // ==========================================
                 SmartMoneyOptionsSignalCard(
                     signal = uiState.smartMoneySignal
+                )
+
+                // ==========================================
+                // 5. LATEST MARKET NEWS (+VE / -VE SENTIMENT)
+                // ==========================================
+                LatestMarketNewsCard(
+                    newsArticles = uiState.marketNews
                 )
 
                 // ==========================================

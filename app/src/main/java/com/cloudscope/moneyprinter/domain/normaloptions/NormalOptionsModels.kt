@@ -39,7 +39,7 @@ data class NormalOptionsSignal(
     val action: NormalSignalAction,
     val confidencePercent: Int,
     val suggestedStrike: Double,
-    val strikeDisplay: String,
+    val strikeDisplay: String = "—",
     val optionType: OptionType,
     val expiryDate: String,
     val entryPrice: Double,

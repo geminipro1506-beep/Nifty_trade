@@ -63,5 +63,12 @@ data class MainUiState(
     val activeInAppAlert: MarketAlert? = null,
     val alertSettings: AlertSettings = AlertSettings(),
     val showAlertsPanel: Boolean = false,
-    val isBackgroundMonitoringActive: Boolean = false
+    val isBackgroundMonitoringActive: Boolean = false,
+
+    // Signal Conflict, Live News & Data Validation
+    val signalConflictState: com.cloudscope.moneyprinter.domain.signal.SignalConflictState = com.cloudscope.moneyprinter.domain.signal.SignalConflictState(),
+    val marketNews: List<com.cloudscope.moneyprinter.domain.news.MarketNewsArticle> = emptyList(),
+    val feedLatencyMs: Long = 0L,
+    val isDataStale: Boolean = false,
+    val validationReason: String = "OK"
 )
