@@ -137,4 +137,45 @@ class StartupCrashFixTest {
         assertEquals(TerminalNavTab.DASHBOARD, vm.uiState.value.selectedTab)
         assertFalse(vm.uiState.value.isRefreshing)
     }
+
+    @Test
+    fun testMainViewModelHandlesNullDependenciesSafely() = runTest {
+        val vm = MainViewModel(
+            repository = null,
+            securePreferences = null,
+            signalRepository = null,
+            alertPreferences = null,
+            notificationDispatcher = null
+        )
+
+        // Actions on null-dependencies viewModel must not throw
+        vm.refreshMarketData()
+        vm.runBacktestSimulation()
+        vm.selectSignalDetailById("non_existent_id")
+        vm.selectSignalDetail(null)
+        vm.dismissSignalDetail()
+        vm.toggleTheme()
+        vm.toggleAutoRefresh()
+        vm.clearNotification()
+
+        assertNotNull(vm.uiState.value)
+    }
+
+    @Test
+    fun testOptionsSelectorEdgeCases() {
+        val stepZero = com.cloudscope.moneyprinter.domain.options.OptionsSelector.roundToStrikeStep(0.0)
+        assertEquals(0.0, stepZero, 0.001)
+
+        val stepNegative = com.cloudscope.moneyprinter.domain.options.OptionsSelector.roundToStrikeStep(-24823.0)
+        assertEquals(-24800.0, stepNegative, 0.001)
+
+        val stepNormal = com.cloudscope.moneyprinter.domain.options.OptionsSelector.roundToStrikeStep(24874.9)
+        assertEquals(24850.0, stepNormal, 0.001)
+
+        val stepRoundUp = com.cloudscope.moneyprinter.domain.options.OptionsSelector.roundToStrikeStep(24875.0)
+        assertEquals(24900.0, stepRoundUp, 0.001)
+
+        val tick = com.cloudscope.moneyprinter.domain.options.OptionsSelector.roundToTickSize(123.44)
+        assertEquals(123.45, tick, 0.001)
+    }
 }
